@@ -1,7 +1,7 @@
 use bevy::{ecs::system::SystemState, prelude::*, window::WindowResolution};
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 
-use midir::{Ignore, MidiInput, MidiInputConnection, MidiInputPort};
+use midir::{Ignore, MidiInput, MidiInputPort};
 
 // App state to store and manage notifications
 #[derive(Resource)]
@@ -31,13 +31,13 @@ fn main() {
         .add_plugin(EguiPlugin)
         .add_event::<SelectDeviceEvent>()
         .add_startup_system(setup_midi)
-        .add_system(hello_world)
         .add_system(discover_devices)
         .add_system(select_device)
         .add_system(select_device_ui)
         .run();
 }
 
+// Initializes the MIDI input instance and adds as a resource
 fn setup_midi(mut commands: Commands) {
     let mut midi_in = MidiInput::new("midir reading input").expect("Couldn't initialize MidiInput");
     midi_in.ignore(Ignore::None);
@@ -49,6 +49,7 @@ fn setup_midi(mut commands: Commands) {
     });
 }
 
+// Constantly updates available devices
 fn discover_devices(mut midi_state: ResMut<MidiState>) {
     // Is there a device selected? Skip this system then.
     if midi_state.selected_port.is_some() {
@@ -59,25 +60,34 @@ fn discover_devices(mut midi_state: ResMut<MidiState>) {
     midi_state.available_ports = midi_state.input.ports();
 }
 
+// Checks for device connection events, connects to device, and stores connection as resource
 fn select_device(world: &mut World) {
+    // Query the events using the world
+    // We do this here since any system using World can't have other parameters
     let mut event_system_state = SystemState::<(EventReader<SelectDeviceEvent>)>::new(world);
     let (mut device_events) = event_system_state.get(&world);
 
+    // Store the connection in an optional variable
     let mut connection_result = None;
 
+    // Loop over all device events if there's any
     if !device_events.is_empty() {
         for device_event in device_events.iter() {
             // Get the port from the event
             let SelectDeviceEvent(device_id) = device_event;
 
+            // Create a new MIDI input instance
+            // We do this here instead of using MidiState because `connect()` consumes instance
             let mut input =
                 MidiInput::new("midir reading input").expect("Couldn't initialize MidiInput");
             input.ignore(Ignore::None);
             let ports = input.ports();
 
+            // Grab the port based on the port index from the event
             match ports.get(*device_id).ok_or("invalid input port selected") {
                 Ok(device_port) => {
                     println!("Connecting...");
+                    // Connect to device!
                     let _conn_in = input
                         .connect(
                             device_port,
@@ -87,28 +97,30 @@ fn select_device(world: &mut World) {
 
                                 // stamp = incrementing time
                                 // message = array of keyboard data. [keyEvent, keyId, strength]
-                                // key
                             },
                             (),
                         )
                         .expect("Couldn't connect to that port. Did the devices change recently?");
+
+                    // Store the connection for later
                     connection_result = Some(_conn_in);
                 }
                 Err(error) => {
                     println!("Error {}", error);
                 }
             }
-            // let in_port_name = midi_state.input.port_name(device_id).expect("Couldn't connect to that port. Did the devices change recently?");
         }
 
+        // Add the connection as a "non-send" resource.
+        // Lets it persist past this system.
+        // And connection can't be used across threads so this enforces main thread only
         if let Some(connection) = connection_result {
             world.insert_non_send_resource(connection);
         }
-
-        // device_events.clear();
     }
 }
 
+// The UI for selecting a device
 fn select_device_ui(
     mut contexts: EguiContexts,
     midi_state: Res<MidiState>,
@@ -126,8 +138,4 @@ fn select_device_ui(
             }
         }
     });
-}
-
-fn hello_world() {
-    // println!("Testing");
 }
