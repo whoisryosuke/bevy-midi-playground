@@ -8,5 +8,6 @@ edition = "2021"
 [dependencies]
 bevy = "0.10.1"
 bevy_egui = "0.20.2"
+chrono = "0.4.24"
 crossbeam-channel = "0.5.8"
 midir = "0.9.1"

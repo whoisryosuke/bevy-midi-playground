@@ -1,8 +1,11 @@
 use bevy::{ecs::system::SystemState, prelude::*, window::WindowResolution};
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
+use chrono::{TimeZone, Utc};
 
 use crossbeam_channel::{Receiver, Sender};
 use midir::{Ignore, MidiInput, MidiInputPort};
+
+const KEY_HISTORY_LENGTH: usize = 10;
 
 // State to manage
 #[derive(Resource)]
@@ -15,7 +18,12 @@ pub struct MidiSetupState {
     selected_port: Option<MidiInputPort>,
 }
 
-pub struct MidiResponse(MidiInputKey);
+pub enum MidiResponse {
+    Input(MidiInputKey),
+    Connected,
+    Disconnected,
+    // Error(String),
+}
 
 #[derive(Resource)]
 pub struct MidiInputReader {
@@ -25,10 +33,13 @@ pub struct MidiInputReader {
 
 #[derive(Resource)]
 pub struct MidiInputState {
-    latest_key: Option<MidiInputKey>,
+    // Is a device connected?
+    connected: bool,
+    // History of last pressed keys
+    keys: Vec<MidiInputKey>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Copy)]
 pub enum MidiEvents {
     #[default]
     Pressed,
@@ -37,8 +48,9 @@ pub enum MidiEvents {
 }
 
 // Event for MIDI key input
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct MidiInputKey {
+    timestamp: u64,
     event: MidiEvents,
     id: u8,
     intensity: u8,
@@ -60,13 +72,16 @@ fn main() {
         }))
         .add_plugin(EguiPlugin)
         .add_event::<SelectDeviceEvent>()
-        .insert_resource(MidiInputState { latest_key: None })
+        .insert_resource(MidiInputState {
+            connected: false,
+            keys: Vec::new(),
+        })
         .add_startup_system(setup_midi)
         .add_system(discover_devices)
         .add_system(sync_keys)
         .add_system(select_device)
         .add_system(select_device_ui)
-        .add_system(input_state_ui)
+        .add_system(debug_input_ui)
         .run();
 }
 
@@ -100,12 +115,26 @@ fn discover_devices(mut midi_state: ResMut<MidiSetupState>) {
     midi_state.available_ports = midi_state.input.ports();
 }
 
-// Checks MIDI message channel for new key inputs each frame
+// Checks MIDI message channel and syncs changes with Bevy (like input or connectivity)
 fn sync_keys(input_reader: Res<MidiInputReader>, mut input_state: ResMut<MidiInputState>) {
     if let Ok(message) = input_reader.receiver.try_recv() {
-        println!("Key detected: {}", message.0.id);
+        match message {
+            MidiResponse::Input(input) => {
+                println!("Key detected: {}", input.id);
 
-        input_state.latest_key = Some(message.0);
+                // Clear previous key history if it exceeds max size
+                while input_state.keys.len() >= KEY_HISTORY_LENGTH {
+                    input_state.keys.remove(0);
+                }
+                input_state.keys.push(input.clone());
+            }
+            MidiResponse::Connected => {
+                input_state.connected = true;
+            }
+            MidiResponse::Disconnected => {
+                input_state.connected = false;
+            }
+        }
     }
 }
 
@@ -144,9 +173,10 @@ fn select_device(world: &mut World) {
                             device_port,
                             "midir-read-input",
                             move |stamp, message, _| {
-                                println!("{}: {:?} (len = {})", stamp, message, message.len());
+                                // println!("{}: {:?} (len = {})", stamp, message, message.len());
                                 // stamp = incrementing time
                                 // message = array of keyboard data. [keyEvent, keyId, strength]
+
                                 // @TODO: Figure out system for determining input for different array sizes
                                 if message.len() < 3 {
                                     return;
@@ -160,7 +190,8 @@ fn select_device(world: &mut World) {
                                 };
 
                                 // Send the key via message channel to reach outside this callback
-                                sender.send(MidiResponse(MidiInputKey {
+                                sender.send(MidiResponse::Input(MidiInputKey {
+                                    timestamp: stamp,
                                     event: event_type,
                                     id: message[1],
                                     intensity: message[2],
@@ -169,6 +200,8 @@ fn select_device(world: &mut World) {
                             (),
                         )
                         .expect("Couldn't connect to that port. Did the devices change recently?");
+
+                    input_reader.sender.send(MidiResponse::Connected);
 
                     // Store the connection for later
                     connection_result = Some(_conn_in);
@@ -209,22 +242,39 @@ fn select_device_ui(
 }
 
 // The UI for selecting a device
-fn input_state_ui(mut contexts: EguiContexts, input_state: Res<MidiInputState>) {
+fn debug_input_ui(mut contexts: EguiContexts, input_state: Res<MidiInputState>) {
     let context = contexts.ctx_mut();
     egui::Window::new("Input state").show(context, |ui| {
-        if let Some(latest_key) = &input_state.latest_key {
-            ui.heading("Latest key");
+        // Connected status
+        let mut name: String;
+        if input_state.connected {
+            name = "🟢 Connected".to_string();
+        } else {
+            name = "🔴 Disconnected".to_string();
+        }
+        ui.heading(name);
 
-            let name = latest_key.id.to_string();
+        ui.heading("Input history");
+        for key in input_state.keys.iter() {
             ui.horizontal(|ui| {
-                ui.strong("Key");
-                ui.label(name);
-            });
+                // let date_time = Utc.timestamp_millis_opt(key.timestamp as i64).unwrap();
+                ui.horizontal(|ui| {
+                    ui.strong("Time");
+                    // ui.label(date_time.timestamp_millis().to_string());
+                    ui.label(key.timestamp.to_string());
+                });
 
-            let intensity = latest_key.intensity.to_string();
-            ui.horizontal(|ui| {
-                ui.strong("Intensity");
-                ui.label(intensity);
+                let name = key.id.to_string();
+                ui.horizontal(|ui| {
+                    ui.strong("Key");
+                    ui.label(name);
+                });
+
+                let intensity = key.intensity.to_string();
+                ui.horizontal(|ui| {
+                    ui.strong("Intensity");
+                    ui.label(intensity);
+                });
             });
         }
     });
