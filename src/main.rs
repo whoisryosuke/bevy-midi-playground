@@ -1,6 +1,7 @@
 use bevy::{ecs::system::SystemState, prelude::*, window::WindowResolution};
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 
+use crossbeam_channel::{Receiver, Sender};
 use midir::{Ignore, MidiInput, MidiInputPort};
 
 // App state to store and manage notifications
@@ -12,6 +13,16 @@ pub struct MidiState {
     available_ports: Vec<MidiInputPort>,
     // The ID of currently selected device's port
     selected_port: Option<MidiInputPort>,
+}
+
+pub struct MidiResponse {
+    key: u8,
+}
+
+#[derive(Resource)]
+pub struct MidiInputReader {
+    receiver: Receiver<MidiResponse>,
+    sender: Sender<MidiResponse>,
 }
 
 // Event to trigger a notification
@@ -32,6 +43,7 @@ fn main() {
         .add_event::<SelectDeviceEvent>()
         .add_startup_system(setup_midi)
         .add_system(discover_devices)
+        .add_system(sync_keys)
         .add_system(select_device)
         .add_system(select_device_ui)
         .run();
@@ -47,6 +59,13 @@ fn setup_midi(mut commands: Commands) {
         available_ports: Vec::new(),
         selected_port: None,
     });
+
+    // We create a message channel to communicate between MIDI protocol and Bevy state
+    let (sender, receiver) = crossbeam_channel::unbounded::<MidiResponse>();
+    commands.insert_resource(MidiInputReader {
+        sender: sender,
+        receiver: receiver,
+    });
 }
 
 // Constantly updates available devices
@@ -60,12 +79,20 @@ fn discover_devices(mut midi_state: ResMut<MidiState>) {
     midi_state.available_ports = midi_state.input.ports();
 }
 
+// Checks MIDI message channel for new key inputs each frame
+fn sync_keys(input_reader: Res<MidiInputReader>) {
+    if let Ok(message) = input_reader.receiver.try_recv() {
+        println!("Key detected: {}", message.key);
+    }
+}
+
 // Checks for device connection events, connects to device, and stores connection as resource
 fn select_device(world: &mut World) {
     // Query the events using the world
     // We do this here since any system using World can't have other parameters
-    let mut event_system_state = SystemState::<(EventReader<SelectDeviceEvent>)>::new(world);
-    let (mut device_events) = event_system_state.get(&world);
+    let mut event_system_state =
+        SystemState::<(EventReader<SelectDeviceEvent>, Res<MidiInputReader>)>::new(world);
+    let (mut device_events, input_reader) = event_system_state.get(&world);
 
     // Store the connection in an optional variable
     let mut connection_result = None;
@@ -82,6 +109,7 @@ fn select_device(world: &mut World) {
                 MidiInput::new("midir reading input").expect("Couldn't initialize MidiInput");
             input.ignore(Ignore::None);
             let ports = input.ports();
+            let sender = input_reader.sender.clone();
 
             // Grab the port based on the port index from the event
             match ports.get(*device_id).ok_or("invalid input port selected") {
@@ -94,9 +122,11 @@ fn select_device(world: &mut World) {
                             "midir-read-input",
                             move |stamp, message, _| {
                                 println!("{}: {:?} (len = {})", stamp, message, message.len());
-
                                 // stamp = incrementing time
                                 // message = array of keyboard data. [keyEvent, keyId, strength]
+
+                                // Send the key via message channel to reach outside this callback
+                                sender.send(MidiResponse { key: message[1] });
                             },
                             (),
                         )
