@@ -4,9 +4,9 @@ use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use crossbeam_channel::{Receiver, Sender};
 use midir::{Ignore, MidiInput, MidiInputPort};
 
-// App state to store and manage notifications
+// State to manage
 #[derive(Resource)]
-pub struct MidiState {
+pub struct MidiSetupState {
     // An instance to access MIDI devices and input
     input: MidiInput,
     // Available ports
@@ -15,14 +15,33 @@ pub struct MidiState {
     selected_port: Option<MidiInputPort>,
 }
 
-pub struct MidiResponse {
-    key: u8,
-}
+pub struct MidiResponse(MidiInputKey);
 
 #[derive(Resource)]
 pub struct MidiInputReader {
     receiver: Receiver<MidiResponse>,
     sender: Sender<MidiResponse>,
+}
+
+#[derive(Resource)]
+pub struct MidiInputState {
+    latest_key: Option<MidiInputKey>,
+}
+
+#[derive(Default, Debug)]
+pub enum MidiEvents {
+    #[default]
+    Pressed,
+    Released,
+    Holding,
+}
+
+// Event for MIDI key input
+#[derive(Default)]
+pub struct MidiInputKey {
+    event: MidiEvents,
+    id: u8,
+    intensity: u8,
 }
 
 // Event to trigger a notification
@@ -41,11 +60,13 @@ fn main() {
         }))
         .add_plugin(EguiPlugin)
         .add_event::<SelectDeviceEvent>()
+        .insert_resource(MidiInputState { latest_key: None })
         .add_startup_system(setup_midi)
         .add_system(discover_devices)
         .add_system(sync_keys)
         .add_system(select_device)
         .add_system(select_device_ui)
+        .add_system(input_state_ui)
         .run();
 }
 
@@ -54,7 +75,7 @@ fn setup_midi(mut commands: Commands) {
     let mut midi_in = MidiInput::new("midir reading input").expect("Couldn't initialize MidiInput");
     midi_in.ignore(Ignore::None);
 
-    commands.insert_resource(MidiState {
+    commands.insert_resource(MidiSetupState {
         input: midi_in,
         available_ports: Vec::new(),
         selected_port: None,
@@ -69,7 +90,7 @@ fn setup_midi(mut commands: Commands) {
 }
 
 // Constantly updates available devices
-fn discover_devices(mut midi_state: ResMut<MidiState>) {
+fn discover_devices(mut midi_state: ResMut<MidiSetupState>) {
     // Is there a device selected? Skip this system then.
     if midi_state.selected_port.is_some() {
         return;
@@ -80,9 +101,11 @@ fn discover_devices(mut midi_state: ResMut<MidiState>) {
 }
 
 // Checks MIDI message channel for new key inputs each frame
-fn sync_keys(input_reader: Res<MidiInputReader>) {
+fn sync_keys(input_reader: Res<MidiInputReader>, mut input_state: ResMut<MidiInputState>) {
     if let Ok(message) = input_reader.receiver.try_recv() {
-        println!("Key detected: {}", message.key);
+        println!("Key detected: {}", message.0.id);
+
+        input_state.latest_key = Some(message.0);
     }
 }
 
@@ -104,7 +127,7 @@ fn select_device(world: &mut World) {
             let SelectDeviceEvent(device_id) = device_event;
 
             // Create a new MIDI input instance
-            // We do this here instead of using MidiState because `connect()` consumes instance
+            // We do this here instead of using MidiSetupState because `connect()` consumes instance
             let mut input =
                 MidiInput::new("midir reading input").expect("Couldn't initialize MidiInput");
             input.ignore(Ignore::None);
@@ -124,9 +147,24 @@ fn select_device(world: &mut World) {
                                 println!("{}: {:?} (len = {})", stamp, message, message.len());
                                 // stamp = incrementing time
                                 // message = array of keyboard data. [keyEvent, keyId, strength]
+                                // @TODO: Figure out system for determining input for different array sizes
+                                if message.len() < 3 {
+                                    return;
+                                }
+
+                                let event_type = match message[0] {
+                                    144 => MidiEvents::Pressed,
+                                    128 => MidiEvents::Released,
+                                    160 => MidiEvents::Holding,
+                                    _ => MidiEvents::Pressed,
+                                };
 
                                 // Send the key via message channel to reach outside this callback
-                                sender.send(MidiResponse { key: message[1] });
+                                sender.send(MidiResponse(MidiInputKey {
+                                    event: event_type,
+                                    id: message[1],
+                                    intensity: message[2],
+                                }));
                             },
                             (),
                         )
@@ -153,7 +191,7 @@ fn select_device(world: &mut World) {
 // The UI for selecting a device
 fn select_device_ui(
     mut contexts: EguiContexts,
-    midi_state: Res<MidiState>,
+    midi_state: Res<MidiSetupState>,
     mut device_event: EventWriter<SelectDeviceEvent>,
 ) {
     let context = contexts.ctx_mut();
@@ -166,6 +204,28 @@ fn select_device_ui(
                 println!("Selecting device {}", &device_name);
                 device_event.send(SelectDeviceEvent(index));
             }
+        }
+    });
+}
+
+// The UI for selecting a device
+fn input_state_ui(mut contexts: EguiContexts, input_state: Res<MidiInputState>) {
+    let context = contexts.ctx_mut();
+    egui::Window::new("Input state").show(context, |ui| {
+        if let Some(latest_key) = &input_state.latest_key {
+            ui.heading("Latest key");
+
+            let name = latest_key.id.to_string();
+            ui.horizontal(|ui| {
+                ui.strong("Key");
+                ui.label(name);
+            });
+
+            let intensity = latest_key.intensity.to_string();
+            ui.horizontal(|ui| {
+                ui.strong("Intensity");
+                ui.label(intensity);
+            });
         }
     });
 }
