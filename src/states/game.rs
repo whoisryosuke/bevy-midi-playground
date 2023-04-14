@@ -102,33 +102,12 @@ pub fn spawn_piano(
                         BLACK_KEY_DEPTH,
                     ))),
                     material: materials.add(Color::BLACK.into()),
-                    transform: Transform::from_xyz(black_position_x, 0.0, 0.0),
+                    transform: Transform::from_xyz(black_position_x, BLACK_KEY_HEIGHT / 4.0, 0.0),
                     ..default()
                 },
             ));
         }
     }
-
-    // for index in 0..NUM_WHITE_KEYS {
-    //     let offset = index as f32;
-
-    //     println!("generating key {}", offset.to_string());
-    //     // Spawn white piano keys
-    //     commands.spawn((
-    //         PianoKey(0, PianoKeyType::White),
-    //         // Mesh
-    //         PbrBundle {
-    //             mesh: meshes.add(Mesh::from(shape::Box::new(
-    //                 WHITE_KEY_WIDTH,
-    //                 WHITE_KEY_HEIGHT,
-    //                 WHITE_KEY_DEPTH,
-    //             ))),
-    //             material: materials.add(Color::WHITE.into()),
-    //             transform: Transform::from_xyz(offset * WHITE_KEY_WIDTH, 0.0, 0.0),
-    //             ..default()
-    //         },
-    //     ));
-    // }
 }
 
 pub fn game_setup(mut commands: Commands) {
