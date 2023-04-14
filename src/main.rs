@@ -1,9 +1,11 @@
 use bevy::{prelude::*, window::WindowResolution};
 use bevy_egui::EguiPlugin;
 
+use debug::DebugPlugin;
 use midi::MidiInputPlugin;
 use states::AppStatePlugin;
 
+mod debug;
 mod midi;
 mod states;
 
@@ -20,5 +22,6 @@ fn main() {
         .add_plugin(EguiPlugin)
         .add_plugin(MidiInputPlugin)
         .add_plugin(AppStatePlugin)
+        .add_plugin(DebugPlugin)
         .run();
 }

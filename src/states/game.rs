@@ -4,11 +4,18 @@ use bevy_egui::{
     EguiContexts,
 };
 
-use crate::midi::{MidiInputKey, MidiInputState};
+use crate::{
+    debug::DebugState,
+    midi::{MidiInputKey, MidiInputState},
+};
 
 use super::AppState;
 
 // Data structures
+
+// Distinguishes 3rd person camera entity
+#[derive(Component)]
+pub struct ThirdPersonCamera;
 
 // Distinguishes a piano key entity
 #[derive(Component)]
@@ -39,6 +46,7 @@ impl Plugin for GamePlugin {
             // Game loop
             .add_system(game_system.in_set(OnUpdate(AppState::Game)))
             .add_system(highlight_keys.in_set(OnUpdate(AppState::Game)))
+            .add_system(debug_sync_camera.in_set(OnUpdate(AppState::Game)))
             // Cleanup
             .add_system(game_cleanup.in_schedule(OnExit(AppState::Game)));
     }
@@ -196,11 +204,14 @@ pub fn game_setup(mut commands: Commands) {
     println!("Game setup");
 
     // Camera
-    commands.spawn(Camera3dBundle {
-        transform: Transform::from_xyz(-30.0, 30.0, 100.0)
-            .looking_at(Vec3::new(0.0, 10.0, 0.0), Vec3::Y),
-        ..Default::default()
-    });
+    commands.spawn((
+        Camera3dBundle {
+            transform: Transform::from_xyz(30.0, 10.0, 50.0)
+                .looking_at(Vec3::new(0.0, 10.0, 0.0), Vec3::Y),
+            ..Default::default()
+        },
+        ThirdPersonCamera,
+    ));
 
     // Lighting
     commands.spawn(PointLightBundle {
@@ -212,6 +223,17 @@ pub fn game_setup(mut commands: Commands) {
         transform: Transform::from_xyz(4.0, 8.0, 4.0),
         ..default()
     });
+}
+
+pub fn debug_sync_camera(
+    mut cameras: Query<&mut Transform, With<ThirdPersonCamera>>,
+    debug_state: Res<DebugState>,
+) {
+    if let Ok(mut camera) = cameras.get_single_mut() {
+        camera.translation.x = debug_state.debug_position.x;
+        camera.translation.y = debug_state.debug_position.y;
+        camera.translation.z = debug_state.debug_position.z;
+    }
 }
 
 pub fn game_system() {}
