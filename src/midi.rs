@@ -65,10 +65,10 @@ impl fmt::Display for MidiEvents {
 // Event for MIDI key input
 #[derive(Default, Clone, Copy)]
 pub struct MidiInputKey {
-    timestamp: u64,
-    event: MidiEvents,
-    id: u8,
-    intensity: u8,
+    pub timestamp: u64,
+    pub event: MidiEvents,
+    pub id: u8,
+    pub intensity: u8,
 }
 
 // Event to trigger a notification
@@ -81,6 +81,7 @@ pub struct MidiInputPlugin;
 impl Plugin for MidiInputPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<SelectDeviceEvent>()
+            .add_event::<MidiInputKey>()
             .insert_resource(MidiInputState {
                 connected: false,
                 keys: Vec::new(),
@@ -125,11 +126,18 @@ fn discover_devices(mut midi_state: ResMut<MidiSetupState>) {
 }
 
 // Checks MIDI message channel and syncs changes with Bevy (like input or connectivity)
-fn sync_keys(input_reader: Res<MidiInputReader>, mut input_state: ResMut<MidiInputState>) {
+fn sync_keys(
+    input_reader: Res<MidiInputReader>,
+    mut input_state: ResMut<MidiInputState>,
+    mut key_events: EventWriter<MidiInputKey>,
+) {
     if let Ok(message) = input_reader.receiver.try_recv() {
         match message {
             MidiResponse::Input(input) => {
                 println!("Key detected: {}", input.id);
+
+                // Send event with latest key input
+                key_events.send(input.clone());
 
                 // Clear previous key history if it exceeds max size
                 while input_state.keys.len() >= KEY_HISTORY_LENGTH {
