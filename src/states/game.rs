@@ -73,7 +73,7 @@ pub fn spawn_piano(
 
         // White key
         if key_type_id == 0 {
-            println!("generating white key {}", key_index.to_string());
+            println!("[SETUP] Generating white key {}", key_index.to_string());
             // We get the position of white keys by incrementing an external offset
             // since we can't use the index of the loop
             white_key_offset += 1;
@@ -99,7 +99,7 @@ pub fn spawn_piano(
 
         // Black keys
         if key_type_id == 1 {
-            println!("generating black key {}", key_index.to_string());
+            println!("[SETUP] Generating black key {}", key_index.to_string());
             let black_position_x = position_x + WHITE_KEY_WIDTH / 2.0;
 
             // Spawn white piano keys
@@ -145,7 +145,6 @@ pub fn highlight_keys(
         // So this number may differ based on total number of keys
         let octave = 3 - midi_state.octave;
         let octave_offset = octave * 12;
-        println!("octave {} {}", &octave, &octave_offset);
 
         // Select the right key and highlight it
         for (entity, key_id_component, key_type) in &key_entities {
@@ -156,14 +155,12 @@ pub fn highlight_keys(
             let real_id = key_id + (octave_offset as usize);
             let check_id = key.id as usize;
 
-            println!("checking keys {} and {}", &real_id, &check_id);
-
             if real_id == check_id {
-                println!(
-                    "[EVENTS] Highlighting key {} {}",
-                    key.id,
-                    key.event.to_string()
-                );
+                // println!(
+                //     "[EVENTS] Highlighting key {} {}",
+                //     key.id,
+                //     key.event.to_string()
+                // );
 
                 // Change color of the selected key
                 // To get a material from a specific entity we grab it's "Handle"
