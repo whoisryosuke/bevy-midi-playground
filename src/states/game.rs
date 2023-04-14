@@ -21,7 +21,7 @@ pub struct PianoKeyId(usize);
 // The type of key (black, white, etc)
 // The types of inputs on a MIDI keyboard
 #[derive(Component)]
-enum PianoKeyType {
+pub enum PianoKeyType {
     White,
     Black,
     // Slider,
@@ -127,8 +127,9 @@ pub fn highlight_keys(
     mut key_events: EventReader<MidiInputKey>,
     midi_state: Res<MidiInputState>,
     key_entities: Query<(Entity, &PianoKeyId, &PianoKeyType), With<PianoKey>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     mut key_materials: Query<&mut Handle<StandardMaterial>>,
-    mut assets: Assets<StandardMaterial>,
+    // mut assets: Assets<StandardMaterial>,
 ) {
     if key_events.is_empty() {
         return;
@@ -136,6 +137,9 @@ pub fn highlight_keys(
 
     for key in key_events.iter() {
         // println!("[EVENTS] MidiInputKey {} {}", key.id, key.event.to_string());
+        let octave = 3 - midi_state.octave;
+        let octave_offset = octave * 12;
+        println!("octave {} {}", &octave, &octave_offset);
 
         // Select the right key and highlight it
         for (entity, key_id_component, key_type) in &key_entities {
@@ -143,10 +147,10 @@ pub fn highlight_keys(
             // Get the "real" key ID
             // We store keys from 0 to total, but MIDI outputs it relative to octave
             // So we do the math to "offset" the keys to match MIDI output
-            let octave = 3 - midi_state.octave;
-            let octave_offset = octave * 12;
-            let real_id = key_id * (octave_offset as usize);
+            let real_id = key_id + (octave_offset as usize);
             let check_id = key.id as usize;
+
+            println!("checking keys {} and {}", &real_id, &check_id);
 
             if real_id == check_id {
                 println!(
@@ -154,28 +158,28 @@ pub fn highlight_keys(
                     key.id,
                     key.event.to_string()
                 );
-            }
-            if let Ok(handle) = key_materials.get_mut(entity) {
-                let material_result = assets.get_mut(&handle);
-                if let Some(material) = material_result {
-                    let mut color: Color;
-                    match key.event {
-                        crate::midi::MidiEvents::Pressed => {
-                            color = Color::BLUE;
-                        }
-                        crate::midi::MidiEvents::Released => match key_type {
-                            PianoKeyType::White => {
-                                color = Color::WHITE;
+
+                if let Ok(handle) = key_materials.get_mut(entity) {
+                    if let Some(material) = materials.get_mut(&handle) {
+                        let color: Color;
+                        match key.event {
+                            crate::midi::MidiEvents::Pressed => {
+                                color = Color::BLUE;
                             }
-                            PianoKeyType::Black => {
-                                color = Color::BLACK;
+                            crate::midi::MidiEvents::Released => match key_type {
+                                PianoKeyType::White => {
+                                    color = Color::WHITE;
+                                }
+                                PianoKeyType::Black => {
+                                    color = Color::BLACK;
+                                }
+                            },
+                            crate::midi::MidiEvents::Holding => {
+                                color = Color::BLUE;
                             }
-                        },
-                        crate::midi::MidiEvents::Holding => {
-                            color = Color::BLUE;
                         }
+                        material.base_color = color.into();
                     }
-                    material.base_color = color.into();
                 }
             }
         }
