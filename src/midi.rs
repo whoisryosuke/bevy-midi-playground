@@ -1,3 +1,5 @@
+use core::fmt;
+
 use bevy::{ecs::system::SystemState, prelude::*};
 use bevy_egui::{egui, EguiContexts};
 use crossbeam_channel::{Receiver, Sender};
@@ -38,6 +40,8 @@ pub struct MidiInputState {
     pub connected: bool,
     // History of last pressed keys
     pub keys: Vec<MidiInputKey>,
+    // Octave offset
+    pub octave: i32,
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -46,6 +50,16 @@ pub enum MidiEvents {
     Pressed,
     Released,
     Holding,
+}
+
+impl fmt::Display for MidiEvents {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            MidiEvents::Pressed => write!(f, "Pressed"),
+            MidiEvents::Released => write!(f, "Released"),
+            MidiEvents::Holding => write!(f, "Holding"),
+        }
+    }
 }
 
 // Event for MIDI key input
@@ -70,6 +84,7 @@ impl Plugin for MidiInputPlugin {
             .insert_resource(MidiInputState {
                 connected: false,
                 keys: Vec::new(),
+                octave: 0,
             })
             .add_startup_system(setup_midi)
             .add_system(discover_devices)
@@ -254,6 +269,12 @@ fn debug_input_ui(
                 ui.horizontal(|ui| {
                     ui.strong("Key");
                     ui.label(name);
+                });
+
+                let event = key.event.to_string();
+                ui.horizontal(|ui| {
+                    ui.strong("Event");
+                    ui.label(event);
                 });
 
                 let intensity = key.intensity.to_string();
