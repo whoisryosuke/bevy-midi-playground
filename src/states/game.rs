@@ -123,6 +123,7 @@ pub fn spawn_piano(
     }
 }
 
+// Check for input events and change color of 3D piano keys
 pub fn highlight_keys(
     mut key_events: EventReader<MidiInputKey>,
     midi_state: Res<MidiInputState>,
@@ -135,8 +136,13 @@ pub fn highlight_keys(
         return;
     }
 
+    // Loop through key input events
     for key in key_events.iter() {
         // println!("[EVENTS] MidiInputKey {} {}", key.id, key.event.to_string());
+
+        // Figure out the current octave
+        // My Arturia Keylab 61 starts at "0" octave and ranges from -3 to 3
+        // So this number may differ based on total number of keys
         let octave = 3 - midi_state.octave;
         let octave_offset = octave * 12;
         println!("octave {} {}", &octave, &octave_offset);
@@ -159,6 +165,9 @@ pub fn highlight_keys(
                     key.event.to_string()
                 );
 
+                // Change color of the selected key
+                // To get a material from a specific entity we grab it's "Handle"
+                // then use that with a "Resource" to get the actual material
                 if let Ok(handle) = key_materials.get_mut(entity) {
                     if let Some(material) = materials.get_mut(&handle) {
                         let color: Color;
