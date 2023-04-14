@@ -3,6 +3,8 @@ use bevy_egui::{egui, EguiContexts};
 use crossbeam_channel::{Receiver, Sender};
 use midir::{MidiInput, MidiInputPort};
 
+use crate::states::AppState;
+
 // Structs
 const KEY_HISTORY_LENGTH: usize = 10;
 
@@ -33,9 +35,9 @@ pub struct MidiInputReader {
 #[derive(Resource)]
 pub struct MidiInputState {
     // Is a device connected?
-    connected: bool,
+    pub connected: bool,
     // History of last pressed keys
-    keys: Vec<MidiInputKey>,
+    pub keys: Vec<MidiInputKey>,
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -158,45 +160,48 @@ fn select_device(world: &mut World) {
             // Grab the port based on the port index from the event
             match ports.get(*device_id).ok_or("invalid input port selected") {
                 Ok(device_port) => {
-                    println!("Connecting...");
+                    println!("Connecting to... {}", device_id);
                     // Connect to device!
-                    let _conn_in = input
-                        .connect(
-                            device_port,
-                            "midir-read-input",
-                            move |stamp, message, _| {
-                                // println!("{}: {:?} (len = {})", stamp, message, message.len());
-                                // stamp = incrementing time
-                                // message = array of keyboard data. [keyEvent, keyId, strength]
+                    let _conn_in = input.connect(
+                        device_port,
+                        "midir-read-input",
+                        move |stamp, message, _| {
+                            // println!("{}: {:?} (len = {})", stamp, message, message.len());
+                            // stamp = incrementing time
+                            // message = array of keyboard data. [keyEvent, keyId, strength]
 
-                                // @TODO: Figure out system for determining input for different array sizes
-                                if message.len() < 3 {
-                                    return;
-                                }
+                            // @TODO: Figure out system for determining input for different array sizes
+                            if message.len() < 3 {
+                                return;
+                            }
 
-                                let event_type = match message[0] {
-                                    144 => MidiEvents::Pressed,
-                                    128 => MidiEvents::Released,
-                                    160 => MidiEvents::Holding,
-                                    _ => MidiEvents::Pressed,
-                                };
+                            let event_type = match message[0] {
+                                144 => MidiEvents::Pressed,
+                                128 => MidiEvents::Released,
+                                160 => MidiEvents::Holding,
+                                _ => MidiEvents::Pressed,
+                            };
 
-                                // Send the key via message channel to reach outside this callback
-                                sender.send(MidiResponse::Input(MidiInputKey {
-                                    timestamp: stamp,
-                                    event: event_type,
-                                    id: message[1],
-                                    intensity: message[2],
-                                }));
-                            },
-                            (),
-                        )
-                        .expect("Couldn't connect to that port. Did the devices change recently?");
+                            // Send the key via message channel to reach outside this callback
+                            sender.send(MidiResponse::Input(MidiInputKey {
+                                timestamp: stamp,
+                                event: event_type,
+                                id: message[1],
+                                intensity: message[2],
+                            }));
+                        },
+                        (),
+                    );
 
-                    input_reader.sender.send(MidiResponse::Connected);
+                    match _conn_in {
+                        Ok(connection) => {
+                            input_reader.sender.send(MidiResponse::Connected);
 
-                    // Store the connection for later
-                    connection_result = Some(_conn_in);
+                            // Store the connection for later
+                            connection_result = Some(connection);
+                        }
+                        Err(_) => {}
+                    }
                 }
                 Err(error) => {
                     println!("Error {}", error);
@@ -214,7 +219,16 @@ fn select_device(world: &mut World) {
 }
 
 // The UI for selecting a device
-fn debug_input_ui(mut contexts: EguiContexts, input_state: Res<MidiInputState>) {
+fn debug_input_ui(
+    mut contexts: EguiContexts,
+    input_state: Res<MidiInputState>,
+    app_state: Res<State<AppState>>,
+) {
+    // Only display during game
+    if app_state.0 != AppState::Game {
+        return;
+    }
+
     let context = contexts.ctx_mut();
     egui::Window::new("Input state").show(context, |ui| {
         // Connected status
