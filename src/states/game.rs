@@ -100,7 +100,7 @@ pub fn spawn_piano(
         // Black keys
         if key_type_id == 1 {
             println!("[SETUP] Generating black key {}", key_index.to_string());
-            let black_position_x = position_x + WHITE_KEY_WIDTH / 2.0;
+            let black_position_x = position_x - WHITE_KEY_WIDTH / 2.0;
 
             // Spawn white piano keys
             commands.spawn((
