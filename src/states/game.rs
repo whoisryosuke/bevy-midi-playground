@@ -190,13 +190,13 @@ pub fn spawn_music_notes(
                         PbrBundle {
                             mesh: meshes.add(Mesh::from(shape::Box::new(
                                 WHITE_KEY_WIDTH,
-                                WHITE_KEY_HEIGHT,
+                                0.5,
                                 -WHITE_KEY_DEPTH,
                             ))),
                             material: materials.add(Color::TEAL.into()),
                             transform: Transform::from_xyz(
                                 piano_key_transform.translation.x,
-                                piano_key_transform.translation.y,
+                                piano_key_transform.translation.y + WHITE_KEY_HEIGHT / 2.0,
                                 piano_key_transform.translation.z,
                             ),
                             ..default()
@@ -238,14 +238,16 @@ pub fn animate_music_notes(
         let PianoNoteEvent(key_type) = key_type_component;
         println!("Note is pressed still... {}", key_type);
         if key_type == &MidiEvents::Pressed {
-            let scale_speed = 1.0;
+            let scale_speed = 5.0;
             let scale_delta = time.delta().as_secs_f32() * scale_speed;
             // Scale up gradually
             note.scale.y += scale_delta;
+            note.translation.y += animation_delta / 3.0;
+        } else {
+            note.translation.y += animation_delta;
         }
 
         // Move up
-        note.translation.y += animation_delta;
     }
 }
 
