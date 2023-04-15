@@ -203,10 +203,13 @@ pub fn animate_music_notes(mut notes: Query<&mut Transform, With<PianoNote>>, ti
     }
 }
 
-pub fn clear_music_notes(notes: Query<&Transform, With<PianoNote>>) {
-    for mut note in notes.iter() {
+pub fn clear_music_notes(
+    mut commands: Commands,
+    notes: Query<(Entity, &Transform), With<PianoNote>>,
+) {
+    for (entity, note) in notes.iter() {
         if note.translation.y > 100.0 {
-            println!("Despawn note!");
+            commands.entity(entity).despawn();
         }
     }
 }
