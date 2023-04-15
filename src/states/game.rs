@@ -17,6 +17,10 @@ use super::AppState;
 #[derive(Component)]
 pub struct ThirdPersonCamera;
 
+// Distinguishes a piano note entity (blocks going up from keyboard)
+#[derive(Component)]
+pub struct PianoNote;
+
 // Distinguishes a piano key entity
 #[derive(Component)]
 pub struct PianoKey;
@@ -35,6 +39,17 @@ pub enum PianoKeyType {
     // Button,
 }
 
+// Constants
+const NUM_TOTAL_KEYS: usize = 61;
+const NUM_WHITE_KEYS: usize = 36;
+const NUM_BLACK_KEYS: usize = 25;
+const WHITE_KEY_WIDTH: f32 = 1.0;
+const WHITE_KEY_HEIGHT: f32 = 5.5;
+const WHITE_KEY_DEPTH: f32 = 0.25;
+const BLACK_KEY_WIDTH: f32 = 0.5;
+const BLACK_KEY_HEIGHT: f32 = 3.5;
+const BLACK_KEY_DEPTH: f32 = 0.5;
+
 // Plugin
 
 pub struct GamePlugin;
@@ -46,7 +61,10 @@ impl Plugin for GamePlugin {
             // Game loop
             .add_system(game_system.in_set(OnUpdate(AppState::Game)))
             .add_system(highlight_keys.in_set(OnUpdate(AppState::Game)))
-            .add_system(debug_sync_camera.in_set(OnUpdate(AppState::Game)))
+            .add_system(spawn_music_notes.in_set(OnUpdate(AppState::Game)))
+            .add_system(animate_music_notes.in_set(OnUpdate(AppState::Game)))
+            .add_system(clear_music_notes.in_set(OnUpdate(AppState::Game)))
+            // .add_system(debug_sync_camera.in_set(OnUpdate(AppState::Game)))
             // Cleanup
             .add_system(game_cleanup.in_schedule(OnExit(AppState::Game)));
     }
@@ -57,16 +75,6 @@ pub fn spawn_piano(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    const NUM_TOTAL_KEYS: usize = 61;
-    const NUM_WHITE_KEYS: usize = 36;
-    const NUM_BLACK_KEYS: usize = 25;
-    const WHITE_KEY_WIDTH: f32 = 1.0;
-    const WHITE_KEY_HEIGHT: f32 = 5.5;
-    const WHITE_KEY_DEPTH: f32 = 0.25;
-    const BLACK_KEY_WIDTH: f32 = 0.5;
-    const BLACK_KEY_HEIGHT: f32 = 3.5;
-    const BLACK_KEY_DEPTH: f32 = 0.5;
-
     // 0 = WHITE
     // 1 = BLACK
     const KEY_ORDER: [i32; 12] = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0];
@@ -132,6 +140,78 @@ pub fn spawn_piano(
 }
 
 // Check for input events and change color of 3D piano keys
+pub fn spawn_music_notes(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut key_events: EventReader<MidiInputKey>,
+    piano_keys: Query<(&Transform, &PianoKeyId), With<PianoKey>>,
+    midi_state: Res<MidiInputState>,
+) {
+    if key_events.is_empty() {
+        return;
+    }
+
+    // Loop through key input events
+    for key in key_events.iter() {
+        println!("[SPAWN] Music note - finding key");
+        // Figure out the current octave offset
+        let octave_offset = get_octave(midi_state.octave);
+
+        // Find key and get position
+        let piano_key_result = piano_keys.iter().find(|(_, key_id_component)| {
+            if let PianoKeyId(key_id) = key_id_component {
+                let real_id = key_id + (octave_offset as usize);
+                println!("[SPAWN] Music note - {} - {}", key_id, key.id);
+                real_id == (key.id as usize)
+            } else {
+                false
+            }
+        });
+
+        if let Some((piano_key_transform, _)) = piano_key_result {
+            println!("[SPAWN] Music note - spawned");
+            // Spawn note where key is
+            commands.spawn((
+                PianoNote,
+                // Mesh
+                PbrBundle {
+                    mesh: meshes.add(Mesh::from(shape::Box::new(
+                        WHITE_KEY_WIDTH,
+                        WHITE_KEY_HEIGHT,
+                        WHITE_KEY_DEPTH,
+                    ))),
+                    material: materials.add(Color::TEAL.into()),
+                    transform: Transform::from_xyz(
+                        piano_key_transform.translation.x,
+                        piano_key_transform.translation.y,
+                        piano_key_transform.translation.z,
+                    ),
+                    ..default()
+                },
+            ));
+        }
+    }
+}
+
+pub fn animate_music_notes(mut notes: Query<&mut Transform, With<PianoNote>>, time: Res<Time>) {
+    let speed = 5.0;
+    let animation_delta = time.delta().as_secs_f32() * speed;
+
+    for mut note in notes.iter_mut() {
+        note.translation.y += animation_delta;
+    }
+}
+
+pub fn clear_music_notes(notes: Query<&Transform, With<PianoNote>>) {
+    for mut note in notes.iter() {
+        if note.translation.y > 100.0 {
+            println!("Despawn note!");
+        }
+    }
+}
+
+// Check for input events and change color of 3D piano keys
 pub fn highlight_keys(
     mut key_events: EventReader<MidiInputKey>,
     midi_state: Res<MidiInputState>,
@@ -148,11 +228,8 @@ pub fn highlight_keys(
     for key in key_events.iter() {
         // println!("[EVENTS] MidiInputKey {} {}", key.id, key.event.to_string());
 
-        // Figure out the current octave
-        // My Arturia Keylab 61 starts at "0" octave and ranges from -3 to 3
-        // So this number may differ based on total number of keys
-        let octave = 3 - midi_state.octave;
-        let octave_offset = octave * 12;
+        // Figure out the current octave offset
+        let octave_offset = get_octave(midi_state.octave);
 
         // Select the right key and highlight it
         for (entity, key_id_component, key_type) in &key_entities {
@@ -242,4 +319,13 @@ pub fn game_system() {}
 
 pub fn game_cleanup() {
     println!("Game cleanup");
+}
+
+fn get_octave(current_octave: i32) -> i32 {
+    // Figure out the current octave
+    // My Arturia Keylab 61 starts at "0" octave and ranges from -3 to 3
+    // So this number may differ based on total number of keys
+    let octave = 3 - current_octave;
+    let octave_offset = octave * 12;
+    octave_offset
 }
