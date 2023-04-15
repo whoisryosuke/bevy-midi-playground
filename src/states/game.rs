@@ -206,8 +206,8 @@ pub fn game_setup(mut commands: Commands) {
     // Camera
     commands.spawn((
         Camera3dBundle {
-            transform: Transform::from_xyz(30.0, 10.0, 50.0)
-                .looking_at(Vec3::new(0.0, 10.0, 0.0), Vec3::Y),
+            transform: Transform::from_xyz(17.5, -24.7, 29.5)
+                .looking_at(Vec3::new(17.5, 26.3, 0.0), Vec3::Y),
             ..Default::default()
         },
         ThirdPersonCamera,
@@ -226,13 +226,15 @@ pub fn game_setup(mut commands: Commands) {
 }
 
 pub fn debug_sync_camera(
-    mut cameras: Query<&mut Transform, With<ThirdPersonCamera>>,
+    mut cameras: Query<(&mut Transform, &ThirdPersonCamera), Without<PianoKey>>,
     debug_state: Res<DebugState>,
 ) {
-    if let Ok(mut camera) = cameras.get_single_mut() {
+    if let Ok((mut camera, _)) = cameras.get_single_mut() {
         camera.translation.x = debug_state.debug_position.x;
         camera.translation.y = debug_state.debug_position.y;
         camera.translation.z = debug_state.debug_position.z;
+
+        camera.look_at(debug_state.camera_look, Vec3::Y);
     }
 }
 

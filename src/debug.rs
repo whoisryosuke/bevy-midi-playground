@@ -8,6 +8,7 @@ pub struct DebugState {
     pub visible: bool,
     // A general position value to play with
     pub debug_position: Vec3,
+    pub camera_look: Vec3,
 }
 
 pub struct DebugPlugin;
@@ -17,6 +18,7 @@ impl Plugin for DebugPlugin {
         app.insert_resource(DebugState {
             visible: false,
             debug_position: Vec3::splat(0.0),
+            camera_look: Vec3::new(0.0, 10.0, 0.0),
         })
         .add_system(debug_ui)
         .add_system(debug_controls);
@@ -32,6 +34,12 @@ fn debug_ui(mut contexts: EguiContexts, mut debug_state: ResMut<DebugState>) {
                 ui.add(egui::DragValue::new(&mut debug_state.debug_position.x).speed(0.1));
                 ui.add(egui::DragValue::new(&mut debug_state.debug_position.y).speed(0.1));
                 ui.add(egui::DragValue::new(&mut debug_state.debug_position.z).speed(0.1));
+            });
+            ui.horizontal(|ui| {
+                ui.label("Camera target");
+                ui.add(egui::DragValue::new(&mut debug_state.camera_look.x).speed(0.1));
+                ui.add(egui::DragValue::new(&mut debug_state.camera_look.y).speed(0.1));
+                ui.add(egui::DragValue::new(&mut debug_state.camera_look.z).speed(0.1));
             });
         });
     }
