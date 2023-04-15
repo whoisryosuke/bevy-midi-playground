@@ -6,7 +6,7 @@ use bevy_egui::{
 
 use crate::{
     debug::DebugState,
-    midi::{MidiInputKey, MidiInputState},
+    midi::{MidiEvents, MidiInputKey, MidiInputState},
 };
 
 use super::AppState;
@@ -19,7 +19,11 @@ pub struct ThirdPersonCamera;
 
 // Distinguishes a piano note entity (blocks going up from keyboard)
 #[derive(Component)]
-pub struct PianoNote;
+pub struct PianoNote(usize);
+
+// Stores the input type in note to extend them
+#[derive(Component)]
+pub struct PianoNoteEvent(MidiEvents);
 
 // Distinguishes a piano key entity
 #[derive(Component)]
@@ -146,59 +150,101 @@ pub fn spawn_music_notes(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut key_events: EventReader<MidiInputKey>,
     piano_keys: Query<(&Transform, &PianoKeyId), With<PianoKey>>,
+    mut music_notes: Query<(&PianoNote, &mut PianoNoteEvent)>,
     midi_state: Res<MidiInputState>,
 ) {
     if key_events.is_empty() {
         return;
     }
 
+    let octave_offset = get_octave(midi_state.octave);
+
     // Loop through key input events
     for key in key_events.iter() {
         println!("[SPAWN] Music note - finding key");
         // Figure out the current octave offset
-        let octave_offset = get_octave(midi_state.octave);
 
-        // Find key and get position
-        let piano_key_result = piano_keys.iter().find(|(_, key_id_component)| {
-            if let PianoKeyId(key_id) = key_id_component {
-                let real_id = key_id + (octave_offset as usize);
-                println!("[SPAWN] Music note - {} - {}", key_id, key.id);
-                real_id == (key.id as usize)
-            } else {
-                false
+        // Determine input type (pressed vs released)
+        match key.event {
+            MidiEvents::Pressed | MidiEvents::Holding => {
+                // Spawn key
+                // Find key and get position
+                let piano_key_result = piano_keys.iter().find(|(_, key_id_component)| {
+                    if let PianoKeyId(key_id) = key_id_component {
+                        let real_id = key_id + (octave_offset as usize);
+                        // println!("[SPAWN] Music note - {} - {}", key_id, key.id);
+                        real_id == (key.id as usize)
+                    } else {
+                        false
+                    }
+                });
+
+                if let Some((piano_key_transform, _)) = piano_key_result {
+                    // println!("[SPAWN] Music note - spawned");
+                    let note_id = (key.id as i32) - octave_offset;
+                    // Spawn note where key is
+                    commands.spawn((
+                        PianoNote(note_id as usize),
+                        PianoNoteEvent(MidiEvents::Pressed),
+                        // Mesh
+                        PbrBundle {
+                            mesh: meshes.add(Mesh::from(shape::Box::new(
+                                WHITE_KEY_WIDTH,
+                                WHITE_KEY_HEIGHT,
+                                -WHITE_KEY_DEPTH,
+                            ))),
+                            material: materials.add(Color::TEAL.into()),
+                            transform: Transform::from_xyz(
+                                piano_key_transform.translation.x,
+                                piano_key_transform.translation.y,
+                                piano_key_transform.translation.z,
+                            ),
+                            ..default()
+                        },
+                    ));
+                }
             }
-        });
-
-        if let Some((piano_key_transform, _)) = piano_key_result {
-            println!("[SPAWN] Music note - spawned");
-            // Spawn note where key is
-            commands.spawn((
-                PianoNote,
-                // Mesh
-                PbrBundle {
-                    mesh: meshes.add(Mesh::from(shape::Box::new(
-                        WHITE_KEY_WIDTH,
-                        WHITE_KEY_HEIGHT,
-                        -WHITE_KEY_DEPTH,
-                    ))),
-                    material: materials.add(Color::TEAL.into()),
-                    transform: Transform::from_xyz(
-                        piano_key_transform.translation.x,
-                        piano_key_transform.translation.y,
-                        piano_key_transform.translation.z,
-                    ),
-                    ..default()
-                },
-            ));
+            MidiEvents::Released => {
+                println!("[SPAWN] Released note - start");
+                // Mark key as released
+                // We loop through all the notes and match ID to key event's ID
+                for (id_component, mut event_component) in music_notes.iter_mut() {
+                    let PianoNote(id) = id_component;
+                    let PianoNoteEvent(mut event) = event_component.as_mut();
+                    let real_id = id + (octave_offset as usize);
+                    println!("[SPAWN] Released note - loop {} {} {}", id, real_id, key.id);
+                    if real_id == (key.id as usize) {
+                        println!("[SPAWN] Released note - marking");
+                        if MidiEvents::Pressed == event {
+                            event = MidiEvents::Released;
+                            println!("[SPAWN] Released note - marked {}", event);
+                            *event_component = PianoNoteEvent(event);
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
-pub fn animate_music_notes(mut notes: Query<&mut Transform, With<PianoNote>>, time: Res<Time>) {
-    let speed = 5.0;
-    let animation_delta = time.delta().as_secs_f32() * speed;
+pub fn animate_music_notes(
+    mut notes: Query<(&mut Transform, &PianoNoteEvent), With<PianoNote>>,
+    time: Res<Time>,
+) {
+    let animation_speed = 5.0;
+    let animation_delta = time.delta().as_secs_f32() * animation_speed;
 
-    for mut note in notes.iter_mut() {
+    for (mut note, key_type_component) in notes.iter_mut() {
+        let PianoNoteEvent(key_type) = key_type_component;
+        println!("Note is pressed still... {}", key_type);
+        if key_type == &MidiEvents::Pressed {
+            let scale_speed = 1.0;
+            let scale_delta = time.delta().as_secs_f32() * scale_speed;
+            // Scale up gradually
+            note.scale.y += scale_delta;
+        }
+
+        // Move up
         note.translation.y += animation_delta;
     }
 }

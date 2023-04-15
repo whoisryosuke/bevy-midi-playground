@@ -44,7 +44,7 @@ pub struct MidiInputState {
     pub octave: i32,
 }
 
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub enum MidiEvents {
     #[default]
     Pressed,
