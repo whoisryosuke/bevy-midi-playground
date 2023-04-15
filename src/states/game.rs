@@ -179,7 +179,7 @@ pub fn spawn_music_notes(
                     mesh: meshes.add(Mesh::from(shape::Box::new(
                         WHITE_KEY_WIDTH,
                         WHITE_KEY_HEIGHT,
-                        WHITE_KEY_DEPTH,
+                        -WHITE_KEY_DEPTH,
                     ))),
                     material: materials.add(Color::TEAL.into()),
                     transform: Transform::from_xyz(
