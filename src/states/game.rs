@@ -205,19 +205,15 @@ pub fn spawn_music_notes(
                 }
             }
             MidiEvents::Released => {
-                println!("[SPAWN] Released note - start");
                 // Mark key as released
                 // We loop through all the notes and match ID to key event's ID
                 for (id_component, mut event_component) in music_notes.iter_mut() {
                     let PianoNote(id) = id_component;
                     let PianoNoteEvent(mut event) = event_component.as_mut();
                     let real_id = id + (octave_offset as usize);
-                    println!("[SPAWN] Released note - loop {} {} {}", id, real_id, key.id);
                     if real_id == (key.id as usize) {
-                        println!("[SPAWN] Released note - marking");
                         if MidiEvents::Pressed == event {
                             event = MidiEvents::Released;
-                            println!("[SPAWN] Released note - marked {}", event);
                             *event_component = PianoNoteEvent(event);
                         }
                     }
@@ -236,7 +232,6 @@ pub fn animate_music_notes(
 
     for (mut note, key_type_component) in notes.iter_mut() {
         let PianoNoteEvent(key_type) = key_type_component;
-        println!("Note is pressed still... {}", key_type);
         if key_type == &MidiEvents::Pressed {
             let scale_speed = 5.0;
             let scale_delta = time.delta().as_secs_f32() * scale_speed;
@@ -244,10 +239,9 @@ pub fn animate_music_notes(
             note.scale.y += scale_delta;
             note.translation.y += animation_delta / 3.0;
         } else {
+            // Move up
             note.translation.y += animation_delta;
         }
-
-        // Move up
     }
 }
 
