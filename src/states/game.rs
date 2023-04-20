@@ -25,6 +25,10 @@ pub struct PianoNote(usize);
 #[derive(Component)]
 pub struct PianoNoteEvent(MidiEvents);
 
+// The whole piano entity (parent of the piano keys)
+#[derive(Component)]
+pub struct Piano;
+
 // Distinguishes a piano key entity
 #[derive(Component)]
 pub struct PianoKey;
@@ -83,64 +87,72 @@ pub fn spawn_piano(
     // 1 = BLACK
     const KEY_ORDER: [i32; 12] = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0];
 
-    // A set of keys is 12 (5 black, 7 white)
-    let mut white_key_offset = 0;
-    for index in 0..NUM_TOTAL_KEYS {
-        let key_type_index = index % 12;
-        let key_type_id = KEY_ORDER[key_type_index];
-        let key_index = index as f32;
-        let position_x = (white_key_offset as f32) * WHITE_KEY_WIDTH;
+    commands
+        .spawn((Piano, SpatialBundle::default()))
+        .with_children(|children| {
+            // A set of keys is 12 (5 black, 7 white)
+            let mut white_key_offset = 0;
+            for index in 0..NUM_TOTAL_KEYS {
+                let key_type_index = index % 12;
+                let key_type_id = KEY_ORDER[key_type_index];
+                let key_index = index as f32;
+                let position_x = (white_key_offset as f32) * WHITE_KEY_WIDTH;
 
-        // White key
-        if key_type_id == 0 {
-            println!("[SETUP] Generating white key {}", key_index.to_string());
-            // We get the position of white keys by incrementing an external offset
-            // since we can't use the index of the loop
-            white_key_offset += 1;
+                // White key
+                if key_type_id == 0 {
+                    println!("[SETUP] Generating white key {}", key_index.to_string());
+                    // We get the position of white keys by incrementing an external offset
+                    // since we can't use the index of the loop
+                    white_key_offset += 1;
 
-            // Spawn white piano keys
-            commands.spawn((
-                PianoKey,
-                PianoKeyId(index),
-                PianoKeyType::White,
-                // Mesh
-                PbrBundle {
-                    mesh: meshes.add(Mesh::from(shape::Box::new(
-                        WHITE_KEY_WIDTH,
-                        WHITE_KEY_HEIGHT,
-                        WHITE_KEY_DEPTH,
-                    ))),
-                    material: materials.add(Color::WHITE.into()),
-                    transform: Transform::from_xyz(position_x, 0.0, 0.0),
-                    ..default()
-                },
-            ));
-        }
+                    // Spawn white piano keys
+                    children.spawn((
+                        PianoKey,
+                        PianoKeyId(index),
+                        PianoKeyType::White,
+                        // Mesh
+                        PbrBundle {
+                            mesh: meshes.add(Mesh::from(shape::Box::new(
+                                WHITE_KEY_WIDTH,
+                                WHITE_KEY_HEIGHT,
+                                WHITE_KEY_DEPTH,
+                            ))),
+                            material: materials.add(Color::WHITE.into()),
+                            transform: Transform::from_xyz(position_x, 0.0, 0.0),
+                            ..default()
+                        },
+                    ));
+                }
 
-        // Black keys
-        if key_type_id == 1 {
-            println!("[SETUP] Generating black key {}", key_index.to_string());
-            let black_position_x = position_x - WHITE_KEY_WIDTH / 2.0;
+                // Black keys
+                if key_type_id == 1 {
+                    println!("[SETUP] Generating black key {}", key_index.to_string());
+                    let black_position_x = position_x - WHITE_KEY_WIDTH / 2.0;
 
-            // Spawn white piano keys
-            commands.spawn((
-                PianoKey,
-                PianoKeyId(index),
-                PianoKeyType::Black,
-                // Mesh
-                PbrBundle {
-                    mesh: meshes.add(Mesh::from(shape::Box::new(
-                        BLACK_KEY_WIDTH,
-                        BLACK_KEY_HEIGHT,
-                        BLACK_KEY_DEPTH,
-                    ))),
-                    material: materials.add(Color::BLACK.into()),
-                    transform: Transform::from_xyz(black_position_x, BLACK_KEY_HEIGHT / 4.0, 0.0),
-                    ..default()
-                },
-            ));
-        }
-    }
+                    // Spawn white piano keys
+                    children.spawn((
+                        PianoKey,
+                        PianoKeyId(index),
+                        PianoKeyType::Black,
+                        // Mesh
+                        PbrBundle {
+                            mesh: meshes.add(Mesh::from(shape::Box::new(
+                                BLACK_KEY_WIDTH,
+                                BLACK_KEY_HEIGHT,
+                                BLACK_KEY_DEPTH,
+                            ))),
+                            material: materials.add(Color::BLACK.into()),
+                            transform: Transform::from_xyz(
+                                black_position_x,
+                                BLACK_KEY_HEIGHT / 4.0,
+                                0.0,
+                            ),
+                            ..default()
+                        },
+                    ));
+                }
+            }
+        });
 }
 
 // Check for input events and change color of 3D piano keys
@@ -348,7 +360,7 @@ pub fn game_setup(mut commands: Commands) {
 }
 
 pub fn debug_sync_camera(
-    mut cameras: Query<(&mut Transform, &ThirdPersonCamera), Without<PianoKey>>,
+    mut cameras: Query<(&mut Transform, &ThirdPersonCamera)>,
     debug_state: Res<DebugState>,
 ) {
     if let Ok((mut camera, _)) = cameras.get_single_mut() {
@@ -357,6 +369,11 @@ pub fn debug_sync_camera(
         camera.translation.z = debug_state.debug_position.z;
 
         camera.look_at(debug_state.camera_look, Vec3::Y);
+
+        // Sync rotation
+        camera.rotation.x = debug_state.rotation.x;
+        camera.rotation.y = debug_state.rotation.y;
+        camera.rotation.z = debug_state.rotation.z;
     }
 }
 
