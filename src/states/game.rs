@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bevy::prelude::*;
 use bevy_egui::{
     egui::{self, Color32},
@@ -57,13 +59,25 @@ const BLACK_KEY_DEPTH: f32 = 0.5;
 // 1 = BLACK
 const KEY_ORDER: [i32; 12] = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0];
 
+// The Y coordinate of where notes start and stop
+const TIMELINE_TOP: f32 = 30.0;
+const TIMELINE_BOTTOM: f32 = 0.0;
+// The length of time our "track" represents. Total note travel length across screen.
+const TIMELINE_LENGTH: f32 = 10.0;
+const TIMELINE_TOTAL_TIME: f32 = 30.0;
+
 #[derive(Component)]
 pub struct TimelineNote;
+
+#[derive(Component)]
+pub struct TimelineNoteTime(f32);
 
 #[derive(Resource)]
 pub struct MusicTimelineState {
     current: usize,
+    playing: bool,
     complete: bool,
+    timer: Timer,
 }
 
 pub struct MusicTimelineItem {
@@ -73,6 +87,13 @@ pub struct MusicTimelineItem {
     note: u8,
     // How long note should be held down
     length: f32,
+}
+
+#[derive(Resource)]
+pub struct MusicTimeline {
+    // timeline: Vec<MusicTimelineItem>,
+    timeline: [MusicTimelineItem; 3],
+    total_time: f32,
 }
 
 const MUSIC_TIMELINE: [MusicTimelineItem; 3] = [
@@ -101,20 +122,27 @@ impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(MusicTimelineState {
             current: 0,
+            playing: false,
             complete: false,
+            timer: Timer::from_seconds(0.0, TimerMode::Once),
+        })
+        .insert_resource(MusicTimeline {
+            timeline: MUSIC_TIMELINE,
+            total_time: TIMELINE_TOTAL_TIME,
         })
         .add_system(game_setup.in_schedule(OnEnter(AppState::Game)))
         .add_system(spawn_piano.in_schedule(OnEnter(AppState::Game)))
         // Game loop
         .add_system(game_system.in_set(OnUpdate(AppState::Game)))
         .add_system(highlight_keys.in_set(OnUpdate(AppState::Game)))
-        .add_system(spawn_music_notes.in_set(OnUpdate(AppState::Game)))
-        .add_system(animate_music_notes.in_set(OnUpdate(AppState::Game)))
-        .add_system(clear_music_notes.in_set(OnUpdate(AppState::Game)))
+        // .add_system(spawn_music_notes.in_set(OnUpdate(AppState::Game)))
+        // .add_system(animate_music_notes.in_set(OnUpdate(AppState::Game)))
+        // .add_system(clear_music_notes.in_set(OnUpdate(AppState::Game)))
         .add_system(spawn_music_timeline.in_set(OnUpdate(AppState::Game)))
         .add_system(animate_music_timeline.in_set(OnUpdate(AppState::Game)))
         .add_system(check_timeline_collisions.in_set(OnUpdate(AppState::Game)))
         .add_system(debug_sync_camera.in_set(OnUpdate(AppState::Game)))
+        .add_system(debug_game_ui.in_set(OnUpdate(AppState::Game)))
         // Cleanup
         .add_system(game_cleanup.in_schedule(OnExit(AppState::Game)));
     }
@@ -232,6 +260,7 @@ pub fn spawn_music_timeline(
 
         commands.spawn((
             TimelineNote,
+            TimelineNoteTime(current_item.time),
             PianoKeyId(current_item.note as usize),
             // Mesh
             PbrBundle {
@@ -241,7 +270,7 @@ pub fn spawn_music_timeline(
                     BLACK_KEY_DEPTH,
                 ))),
                 material: materials.add(Color::GREEN.into()),
-                transform: Transform::from_xyz(position_x, 10.0, 0.0),
+                transform: Transform::from_xyz(position_x, TIMELINE_TOP, 0.0),
                 ..default()
             },
         ));
@@ -256,13 +285,21 @@ pub fn spawn_music_timeline(
 }
 
 pub fn animate_music_timeline(
-    mut notes: Query<&mut Transform, With<TimelineNote>>,
+    mut notes: Query<(&mut Transform, &TimelineNoteTime), With<TimelineNote>>,
     time: Res<Time>,
+    mut timeline_state: ResMut<MusicTimelineState>,
 ) {
-    for mut note_position in notes.iter_mut() {
-        let speed = time.delta().as_secs_f32() * 1.0;
-        // Move down a little past keys
-        note_position.translation.y -= speed;
+    timeline_state.timer.tick(time.delta());
+    let current_time = timeline_state.timer.elapsed().as_secs_f32();
+    for (mut note_position, start_time_component) in notes.iter_mut() {
+        let TimelineNoteTime(start_time) = start_time_component;
+        // Current time represents top of the screen
+        // Get a number from 0 - TIMELINE_LENGTH to
+        // proportionally calculate actual distance from the time
+        let note_difference = start_time - current_time;
+        let note_distance = note_difference * TIMELINE_TOP / TIMELINE_LENGTH;
+
+        note_position.translation.y = TIMELINE_TOP + note_distance;
     }
 }
 
@@ -518,6 +555,53 @@ pub fn debug_sync_camera(
         camera.rotation.y = debug_state.rotation.y;
         camera.rotation.z = debug_state.rotation.z;
     }
+}
+
+fn debug_game_ui(
+    mut contexts: EguiContexts,
+    mut timeline_state: ResMut<MusicTimelineState>,
+    timeline: Res<MusicTimeline>,
+    time: Res<Time>,
+) {
+    timeline_state.timer.tick(time.delta());
+
+    if timeline_state.timer.finished() {
+        timeline_state.complete = true;
+        timeline_state.playing = false;
+    }
+
+    egui::Window::new("Debug Game State").show(contexts.ctx_mut(), |ui| {
+        ui.horizontal(|ui| {
+            ui.heading("Timer");
+            ui.label(timeline_state.timer.elapsed().as_secs_f32().to_string())
+        });
+
+        if !timeline_state.playing {
+            if ui.button("Start").clicked() {
+                timeline_state.playing = true;
+                // timeline_state
+                //     .timer
+                //     .set_duration(Duration::from_secs_f32(timeline.total_time));
+                // timeline_state.timer.reset();
+                // timeline_state.timer.unpause();
+                timeline_state.timer = Timer::new(
+                    Duration::from_secs_f32(timeline.total_time),
+                    TimerMode::Once,
+                );
+            }
+        } else {
+            if ui.button("Pause").clicked() {
+                timeline_state.playing = false;
+                timeline_state.timer.pause();
+            }
+        }
+
+        if ui.button("Reset").clicked() {
+            timeline_state.playing = false;
+            timeline_state.timer.reset();
+            timeline_state.timer.pause();
+        }
+    });
 }
 
 pub fn game_system() {}
