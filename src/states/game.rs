@@ -230,7 +230,7 @@ pub fn spawn_music_timeline(
     let current_item = &MUSIC_TIMELINE[timeline_state.current];
 
     // We spawn
-    if time.elapsed_seconds() >= current_item.time {
+    if timeline_state.timer.elapsed_secs() >= current_item.time {
         println!("[TIMELINE] Spawning note");
 
         // Get the placement of piano key.
@@ -258,17 +258,19 @@ pub fn spawn_music_timeline(
             num_white_keys - WHITE_KEY_WIDTH / 2.0
         };
 
+        let shape = if key_type_id == 0 {
+            shape::Box::new(WHITE_KEY_WIDTH, WHITE_KEY_HEIGHT, WHITE_KEY_DEPTH)
+        } else {
+            shape::Box::new(BLACK_KEY_WIDTH, BLACK_KEY_HEIGHT, BLACK_KEY_DEPTH)
+        };
+
         commands.spawn((
             TimelineNote,
             TimelineNoteTime(current_item.time),
             PianoKeyId(current_item.note as usize),
             // Mesh
             PbrBundle {
-                mesh: meshes.add(Mesh::from(shape::Box::new(
-                    BLACK_KEY_WIDTH,
-                    BLACK_KEY_HEIGHT,
-                    BLACK_KEY_DEPTH,
-                ))),
+                mesh: meshes.add(Mesh::from(shape)),
                 material: materials.add(Color::GREEN.into()),
                 transform: Transform::from_xyz(position_x, TIMELINE_TOP, 0.0),
                 ..default()
@@ -576,8 +578,23 @@ fn debug_game_ui(
             ui.label(timeline_state.timer.elapsed().as_secs_f32().to_string())
         });
 
+        let complete_text = if timeline_state.complete {
+            "Complete".to_string()
+        } else {
+            "Not Complete".to_string()
+        };
+        ui.heading(complete_text);
+
+        let playing_text = if timeline_state.playing {
+            "Playing".to_string()
+        } else {
+            "Not Playing".to_string()
+        };
+        ui.heading(playing_text);
+
         if !timeline_state.playing {
             if ui.button("Start").clicked() {
+                timeline_state.complete = false;
                 timeline_state.playing = true;
                 // timeline_state
                 //     .timer
@@ -588,6 +605,12 @@ fn debug_game_ui(
                     Duration::from_secs_f32(timeline.total_time),
                     TimerMode::Once,
                 );
+            }
+
+            if timeline_state.timer.paused() {
+                if ui.button("Unpause").clicked() {
+                    timeline_state.timer.unpause();
+                }
             }
         } else {
             if ui.button("Pause").clicked() {
