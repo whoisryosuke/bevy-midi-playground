@@ -221,18 +221,26 @@ pub fn spawn_music_notes(
                         PianoNote(note_id as usize),
                         PianoNoteEvent(MidiEvents::Pressed),
                         // Physics
-                        Collider::cuboid(WHITE_KEY_WIDTH, 0.5, -WHITE_KEY_DEPTH),
+                        Collider::cuboid(WHITE_KEY_WIDTH, 0.5, WHITE_KEY_DEPTH),
                         // Needed to detect collision events
                         // ActiveEvents::COLLISION_EVENTS,
-                        RigidBody::Dynamic,
                         Velocity::default(),
                         ContactForceEventThreshold(30.0),
+                        RigidBody::Dynamic,
+                        // Debug without mesh
+                        // SpatialBundle::from_transform(
+                        //     Transform::from_xyz(
+                        //         transform.translation.x,
+                        //         transform.translation.y - WHITE_KEY_HEIGHT,
+                        //         transform.translation.z,
+                        //     )
+                        // )
                         // Mesh
                         PbrBundle {
                             mesh: meshes.add(Mesh::from(shape::Box::new(
                                 WHITE_KEY_WIDTH,
                                 0.5,
-                                -WHITE_KEY_DEPTH,
+                                WHITE_KEY_DEPTH,
                             ))),
                             material: materials.add(Color::TEAL.into()),
                             transform: Transform::from_xyz(
@@ -273,10 +281,6 @@ pub fn animate_music_notes(
     let animation_delta = animation_speed;
 
     for (mut note, mut velocity, key_type_component) in notes.iter_mut() {
-        println!(
-            "animating note {} {}",
-            note.translation.x, note.translation.y
-        );
         let PianoNoteEvent(key_type) = key_type_component;
         if key_type == &MidiEvents::Pressed {
             let scale_speed = 5.0;
