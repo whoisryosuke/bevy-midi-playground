@@ -53,6 +53,9 @@ const WHITE_KEY_DEPTH: f32 = 0.25;
 const BLACK_KEY_WIDTH: f32 = 0.5;
 const BLACK_KEY_HEIGHT: f32 = 3.5;
 const BLACK_KEY_DEPTH: f32 = 0.5;
+// 0 = WHITE
+// 1 = BLACK
+const KEY_ORDER: [i32; 12] = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0];
 
 #[derive(Component)]
 pub struct TimelineNote;
@@ -72,11 +75,23 @@ pub struct MusicTimelineItem {
     length: f32,
 }
 
-const MUSIC_TIMELINE: [MusicTimelineItem; 1] = [MusicTimelineItem {
-    time: 1.0,
-    note: 38,
-    length: 3.0,
-}];
+const MUSIC_TIMELINE: [MusicTimelineItem; 3] = [
+    MusicTimelineItem {
+        time: 1.0,
+        note: 38,
+        length: 3.0,
+    },
+    MusicTimelineItem {
+        time: 2.0,
+        note: 39,
+        length: 3.0,
+    },
+    MusicTimelineItem {
+        time: 3.0,
+        note: 40,
+        length: 3.0,
+    },
+];
 
 // Plugin
 
@@ -110,10 +125,6 @@ pub fn spawn_piano(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // 0 = WHITE
-    // 1 = BLACK
-    const KEY_ORDER: [i32; 12] = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0];
-
     // A set of keys is 12 (5 black, 7 white)
     let mut white_key_offset = 0;
     for index in 0..NUM_TOTAL_KEYS {
@@ -194,8 +205,30 @@ pub fn spawn_music_timeline(
     if time.elapsed_seconds() >= current_item.time {
         println!("[TIMELINE] Spawning note");
 
-        let octave_offset = get_octave(midi_state.octave) as f32;
-        let position_x = current_item.note as f32 - octave_offset;
+        // Get the placement of piano key.
+        // Key event index are multiplied by octaves, so we calculate actual index on piano.
+        let octave_offset = get_octave(midi_state.octave) as u8;
+        let real_index = current_item.note - octave_offset;
+        let real_index_f32 = real_index as f32;
+        let key_type_index = (real_index % 12) as usize;
+        let key_type_id = KEY_ORDER[key_type_index];
+
+        // We also have to account for black vs white keys
+        // Count number of previous white keys to this key's position
+        let num_white_keys = KEY_ORDER
+            .iter()
+            .enumerate()
+            .filter(|(index, &key_type)| index < &(real_index as usize) && key_type == 0)
+            .count() as f32;
+
+        // Offset black keys slightly
+        let position_x = if key_type_id == 0 {
+            // White key
+            num_white_keys
+        } else {
+            // Black key
+            num_white_keys - WHITE_KEY_WIDTH / 2.0
+        };
 
         commands.spawn((
             TimelineNote,
@@ -207,7 +240,7 @@ pub fn spawn_music_timeline(
                     BLACK_KEY_HEIGHT,
                     BLACK_KEY_DEPTH,
                 ))),
-                material: materials.add(Color::BLACK.into()),
+                material: materials.add(Color::GREEN.into()),
                 transform: Transform::from_xyz(position_x, 10.0, 0.0),
                 ..default()
             },
