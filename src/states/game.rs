@@ -54,23 +54,54 @@ const BLACK_KEY_WIDTH: f32 = 0.5;
 const BLACK_KEY_HEIGHT: f32 = 3.5;
 const BLACK_KEY_DEPTH: f32 = 0.5;
 
+#[derive(Component)]
+pub struct TimelineNote;
+
+#[derive(Resource)]
+pub struct MusicTimelineState {
+    current: usize,
+    complete: bool,
+}
+
+pub struct MusicTimelineItem {
+    // Time in seconds
+    time: f32,
+    // Note on keyboard
+    note: u8,
+    // How long note should be held down
+    length: f32,
+}
+
+const MUSIC_TIMELINE: [MusicTimelineItem; 1] = [MusicTimelineItem {
+    time: 1.0,
+    note: 38,
+    length: 3.0,
+}];
+
 // Plugin
 
 pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
-        app.add_system(game_setup.in_schedule(OnEnter(AppState::Game)))
-            .add_system(spawn_piano.in_schedule(OnEnter(AppState::Game)))
-            // Game loop
-            .add_system(game_system.in_set(OnUpdate(AppState::Game)))
-            .add_system(highlight_keys.in_set(OnUpdate(AppState::Game)))
-            .add_system(spawn_music_notes.in_set(OnUpdate(AppState::Game)))
-            .add_system(animate_music_notes.in_set(OnUpdate(AppState::Game)))
-            .add_system(clear_music_notes.in_set(OnUpdate(AppState::Game)))
-            .add_system(debug_sync_camera.in_set(OnUpdate(AppState::Game)))
-            // Cleanup
-            .add_system(game_cleanup.in_schedule(OnExit(AppState::Game)));
+        app.insert_resource(MusicTimelineState {
+            current: 0,
+            complete: false,
+        })
+        .add_system(game_setup.in_schedule(OnEnter(AppState::Game)))
+        .add_system(spawn_piano.in_schedule(OnEnter(AppState::Game)))
+        // Game loop
+        .add_system(game_system.in_set(OnUpdate(AppState::Game)))
+        .add_system(highlight_keys.in_set(OnUpdate(AppState::Game)))
+        .add_system(spawn_music_notes.in_set(OnUpdate(AppState::Game)))
+        .add_system(animate_music_notes.in_set(OnUpdate(AppState::Game)))
+        .add_system(clear_music_notes.in_set(OnUpdate(AppState::Game)))
+        .add_system(spawn_music_timeline.in_set(OnUpdate(AppState::Game)))
+        .add_system(animate_music_timeline.in_set(OnUpdate(AppState::Game)))
+        .add_system(check_timeline_collisions.in_set(OnUpdate(AppState::Game)))
+        .add_system(debug_sync_camera.in_set(OnUpdate(AppState::Game)))
+        // Cleanup
+        .add_system(game_cleanup.in_schedule(OnExit(AppState::Game)));
     }
 }
 
@@ -139,6 +170,97 @@ pub fn spawn_piano(
                     ..default()
                 },
             ));
+        }
+    }
+}
+
+// Spawns notes on the music timeline
+pub fn spawn_music_timeline(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    // piano_keys: Query<(&Transform, &PianoKeyId), With<PianoKey>>,
+    midi_state: Res<MidiInputState>,
+    mut timeline_state: ResMut<MusicTimelineState>,
+    time: Res<Time>,
+) {
+    if timeline_state.complete {
+        return;
+    }
+
+    let current_item = &MUSIC_TIMELINE[timeline_state.current];
+
+    // We spawn
+    if time.elapsed_seconds() >= current_item.time {
+        println!("[TIMELINE] Spawning note");
+
+        let octave_offset = get_octave(midi_state.octave) as f32;
+        let position_x = current_item.note as f32 - octave_offset;
+
+        commands.spawn((
+            TimelineNote,
+            PianoKeyId(current_item.note as usize),
+            // Mesh
+            PbrBundle {
+                mesh: meshes.add(Mesh::from(shape::Box::new(
+                    BLACK_KEY_WIDTH,
+                    BLACK_KEY_HEIGHT,
+                    BLACK_KEY_DEPTH,
+                ))),
+                material: materials.add(Color::BLACK.into()),
+                transform: Transform::from_xyz(position_x, 10.0, 0.0),
+                ..default()
+            },
+        ));
+
+        let next_index = timeline_state.current + 1;
+        if MUSIC_TIMELINE.len() > next_index {
+            timeline_state.current += 1;
+        } else {
+            timeline_state.complete = true;
+        }
+    }
+}
+
+pub fn animate_music_timeline(
+    mut notes: Query<&mut Transform, With<TimelineNote>>,
+    time: Res<Time>,
+) {
+    for mut note_position in notes.iter_mut() {
+        let speed = time.delta().as_secs_f32() * 1.0;
+        // Move down a little past keys
+        note_position.translation.y -= speed;
+    }
+}
+
+// Check for input events and change color of 3D piano keys
+pub fn check_timeline_collisions(
+    mut key_events: EventReader<MidiInputKey>,
+    // midi_state: Res<MidiInputState>,
+    notes: Query<(&Transform, &PianoKeyId), With<TimelineNote>>,
+) {
+    if key_events.is_empty() {
+        return;
+    }
+
+    // Loop through key input events
+    for key in key_events.iter() {
+        // println!("[EVENTS] MidiInputKey {} {}", key.id, key.event.to_string());
+        let check_id = key.id as usize;
+        println!("[COLLISION] Key pressed...");
+
+        // Loop through all the active notes on screen
+        for (transform, id_component) in notes.iter() {
+            let PianoKeyId(id) = id_component;
+            println!("[COLLISION] Checking note ID {} vs {}", id, check_id);
+            // Did the user hit a note floating around?
+            if id == &check_id {
+                println!("[COLLISION] Key pressed on note lane");
+
+                if transform.translation.x <= WHITE_KEY_HEIGHT {
+                    println!("[COLLISION] Key pressed in time or after");
+                }
+            }
         }
     }
 }
@@ -371,6 +493,7 @@ pub fn game_cleanup() {
     println!("Game cleanup");
 }
 
+// Utility functions
 fn get_octave(current_octave: i32) -> i32 {
     // Figure out the current octave
     // My Arturia Keylab 61 starts at "0" octave and ranges from -3 to 3
@@ -378,4 +501,8 @@ fn get_octave(current_octave: i32) -> i32 {
     let octave = 3 - current_octave;
     let octave_offset = octave * 12;
     octave_offset
+}
+
+fn lerp(start: &f32, end: &f32, amt: f32) -> f32 {
+    return (1.0 - amt) * start + amt * end;
 }
