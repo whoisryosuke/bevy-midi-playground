@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bevy::prelude::*;
 use bevy_egui::{
     egui::{self, Color32},
@@ -57,7 +59,14 @@ pub struct Floor;
 pub struct Enemy {
     name: String,
     score: i32,
+    destroy: bool,
+    timer: Option<Timer>,
 }
+
+// Events
+
+// Notes collided with enemy
+pub struct EnemyColliderEvent(Entity);
 
 // Constants
 const NUM_TOTAL_KEYS: usize = 61;
@@ -76,7 +85,8 @@ pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
-        app.add_system(game_setup.in_schedule(OnEnter(AppState::Game)))
+        app.add_event::<EnemyColliderEvent>()
+            .add_system(game_setup.in_schedule(OnEnter(AppState::Game)))
             .add_system(spawn_piano.in_schedule(OnEnter(AppState::Game)))
             .add_system(spawn_enemies.in_schedule(OnEnter(AppState::Game)))
             // Game loop
@@ -86,6 +96,9 @@ impl Plugin for GamePlugin {
             .add_system(animate_music_notes.in_set(OnUpdate(AppState::Game)))
             .add_system(clear_music_notes.in_set(OnUpdate(AppState::Game)))
             .add_system(display_collision_events.in_set(OnUpdate(AppState::Game)))
+            .add_system(mark_enemy_for_destruction.in_set(OnUpdate(AppState::Game)))
+            .add_system(enemy_destruction_animation.in_set(OnUpdate(AppState::Game)))
+            .add_system(enemy_destruction_despawn.in_set(OnUpdate(AppState::Game)))
             // .add_system(check_collisions_manual.in_set(OnUpdate(AppState::Game)))
             .add_system(debug_sync_camera.in_set(OnUpdate(AppState::Game)))
             // Cleanup
@@ -105,7 +118,7 @@ pub fn spawn_piano(
     commands
         .spawn((
             Piano,
-            SpatialBundle::from_transform(Transform::from_xyz(0.0, 20.0, 0.0)),
+            SpatialBundle::from_transform(Transform::from_xyz(0.0, 25.0, 0.0)),
         ))
         .with_children(|children| {
             // A set of keys is 12 (5 black, 7 white)
@@ -224,7 +237,14 @@ pub fn spawn_music_notes(
                         Collider::cuboid(WHITE_KEY_WIDTH, 0.5, WHITE_KEY_DEPTH),
                         // Needed to detect collision events
                         // ActiveEvents::COLLISION_EVENTS,
-                        Velocity::default(),
+                        Velocity {
+                            linvel: Vec3 {
+                                x: 0.0,
+                                y: -((key.intensity as f32) / 100.0),
+                                z: 0.0,
+                            },
+                            angvel: Vec3::ZERO,
+                        },
                         ContactForceEventThreshold(30.0),
                         RigidBody::Dynamic,
                         // Debug without mesh
@@ -285,8 +305,9 @@ pub fn animate_music_notes(
         if key_type == &MidiEvents::Pressed {
             let scale_speed = 5.0;
             let scale_delta = time.delta().as_secs_f32() * scale_speed;
+            velocity.linvel = Vec3::new(0.0, 0.001, 0.0);
             // Scale up gradually
-            // note.scale.y += scale_delta;
+            note.scale.y += scale_delta;
             // note.translation.y += animation_delta / 3.0;
             // velocity.linvel.y += animation_delta / 3.0;
             // velocity.linvel.y -= animation_delta / 3.0;
@@ -295,7 +316,7 @@ pub fn animate_music_notes(
             // Move up
             // note.translation.y += animation_delta;
             // velocity.linvel.y += animation_delta;
-            velocity.linvel -= Vec3::new(0.0, 1.0, 0.0);
+            // velocity.linvel -= Vec3::new(0.0, 1.0, 0.0);
             // velocity.linvel.y -= animation_delta;
             // velocity.linvel.x -= animation_delta;
         }
@@ -384,11 +405,13 @@ pub fn spawn_enemies(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let enemy_size = 2.0;
+    let enemy_size = 0.5;
     commands.spawn((
         Enemy {
-            name: "Test enemy".to_string(),
+            name: "Test enemy 1".to_string(),
             score: 100,
+            destroy: false,
+            timer: None,
         },
         Collider::cuboid(enemy_size, enemy_size, enemy_size),
         ColliderDebugColor(Color::hsl(220.3, 1.0, 220.3)),
@@ -397,15 +420,17 @@ pub fn spawn_enemies(
         PbrBundle {
             mesh: meshes.add(shape::Box::new(enemy_size, enemy_size, enemy_size).into()),
             material: materials.add(Color::hex("#DDDDDD").unwrap().into()),
-            transform: Transform::from_xyz(10.0, 20.0, 0.0),
+            transform: Transform::from_xyz(10.0, 15.0, 0.0),
             ..default()
         },
     ));
 
     commands.spawn((
         Enemy {
-            name: "Test enemy".to_string(),
+            name: "Test enemy 2".to_string(),
             score: 100,
+            destroy: false,
+            timer: None,
         },
         Collider::cuboid(enemy_size, enemy_size, enemy_size),
         ColliderDebugColor(Color::hsl(220.3, 1.0, 220.3)),
@@ -414,7 +439,7 @@ pub fn spawn_enemies(
         PbrBundle {
             mesh: meshes.add(shape::Box::new(enemy_size, enemy_size, enemy_size).into()),
             material: materials.add(Color::hex("#DDDDDD").unwrap().into()),
-            transform: Transform::from_xyz(30.0, 30.0, -enemy_size),
+            transform: Transform::from_xyz(30.0, 10.0, -enemy_size),
             ..default()
         },
     ));
@@ -447,6 +472,15 @@ pub fn game_setup(
         transform: Transform::from_xyz(4.0, 8.0, 4.0),
         ..default()
     });
+    commands.spawn(PointLightBundle {
+        point_light: PointLight {
+            intensity: 1500.0,
+            shadows_enabled: true,
+            ..default()
+        },
+        transform: Transform::from_xyz(8.0, 8.0, 4.0),
+        ..default()
+    });
 
     // Floor / ground
     let ground_size = 200.1;
@@ -465,12 +499,12 @@ pub fn game_setup(
 }
 
 fn display_collision_events(
-    // mut commands: Commands,
+    mut commands: Commands,
     mut collision_events: EventReader<CollisionEvent>,
     mut contact_force_events: EventReader<ContactForceEvent>,
-    // mut attach_events: EventWriter<AttachObjectEvent>,
-    // player_entity: Query<Entity, With<Player>>,
-    // floor_entity: Query<Entity, With<Floor>>,
+    mut enemy_collider_event: EventWriter<EnemyColliderEvent>, // mut attach_events: EventWriter<AttachObjectEvent>,
+                                                               // player_entity: Query<Entity, With<Player>>,
+                                                               // floor_entity: Query<Entity, With<Floor>>,
 ) {
     // Check for collisions
     for collision_event in collision_events.iter() {
@@ -481,6 +515,16 @@ fn display_collision_events(
                     first_entity.index(),
                     second_entity.index()
                 );
+                enemy_collider_event.send(EnemyColliderEvent(*first_entity));
+                // commands.entity(*first_entity).insert((
+                //     RigidBody::Dynamic,
+                //     Velocity {
+                //         linvel: Vec3::new(0.0, -1.0, 0.0),
+                //         angvel: Vec3::ZERO,
+                //     },
+                // ));
+                // commands.entity(*first_entity).insert(RigidBody::Dynamic);
+                // commands.entity(*second_entity).insert(RigidBody::Dynamic);
             }
             CollisionEvent::Stopped(first_entity, second_entity, event) => {}
         }
@@ -488,6 +532,54 @@ fn display_collision_events(
 
     for contact_force_event in contact_force_events.iter() {
         println!("Received contact force event: {contact_force_event:?}");
+    }
+}
+
+pub fn mark_enemy_for_destruction(
+    mut collider_events: EventReader<EnemyColliderEvent>,
+    mut enemies: Query<&mut Enemy>,
+) {
+    if !collider_events.is_empty() {
+        // We loop over all events and use the event's collider entity index
+        for event in collider_events.iter() {
+            let EnemyColliderEvent(enemy_entity) = event;
+
+            let mut enemy_data = enemies.get_mut(*enemy_entity).unwrap();
+
+            enemy_data.destroy = true;
+            enemy_data.timer = Some(Timer::from_seconds(2.0, TimerMode::Once));
+        }
+    }
+}
+
+pub fn enemy_destruction_animation(
+    mut enemies: Query<(&mut Enemy, &mut Transform)>,
+    time: Res<Time>,
+) {
+    for (mut enemy, mut enemy_position) in enemies.iter_mut() {
+        if enemy.destroy {
+            let mut timer = enemy.timer.as_mut().unwrap();
+            timer.tick(time.delta());
+            let elapsed = timer.elapsed_secs();
+            enemy_position.rotate_y(elapsed * 3.0);
+        }
+    }
+}
+
+pub fn enemy_destruction_despawn(
+    mut commands: Commands,
+    mut enemies: Query<(&mut Enemy, Entity)>,
+    time: Res<Time>,
+) {
+    for (mut enemy, enemy_entity) in enemies.iter_mut() {
+        if enemy.destroy {
+            let mut timer = enemy.timer.as_mut().unwrap();
+            timer.tick(time.delta());
+
+            if timer.finished() {
+                commands.entity(enemy_entity).despawn();
+            }
+        }
     }
 }
 
