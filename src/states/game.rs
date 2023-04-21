@@ -141,6 +141,7 @@ impl Plugin for GamePlugin {
         .add_system(spawn_music_timeline.in_set(OnUpdate(AppState::Game)))
         .add_system(animate_music_timeline.in_set(OnUpdate(AppState::Game)))
         .add_system(check_timeline_collisions.in_set(OnUpdate(AppState::Game)))
+        .add_system(clear_complete_timeline_notes.in_set(OnUpdate(AppState::Game)))
         .add_system(debug_sync_camera.in_set(OnUpdate(AppState::Game)))
         .add_system(debug_game_ui.in_set(OnUpdate(AppState::Game)))
         // Cleanup
@@ -237,7 +238,6 @@ pub fn spawn_music_timeline(
         // Key event index are multiplied by octaves, so we calculate actual index on piano.
         let octave_offset = get_octave(midi_state.octave) as u8;
         let real_index = current_item.note - octave_offset;
-        let real_index_f32 = real_index as f32;
         let key_type_index = (real_index % 12) as usize;
         let key_type_id = KEY_ORDER[key_type_index];
 
@@ -309,7 +309,8 @@ pub fn animate_music_timeline(
 pub fn check_timeline_collisions(
     mut key_events: EventReader<MidiInputKey>,
     // midi_state: Res<MidiInputState>,
-    notes: Query<(&Transform, &PianoKeyId), With<TimelineNote>>,
+    notes: Query<(&Transform, &PianoKeyId, &TimelineNoteTime), With<TimelineNote>>,
+    timeline_state: Res<MusicTimelineState>,
 ) {
     if key_events.is_empty() {
         return;
@@ -319,11 +320,11 @@ pub fn check_timeline_collisions(
     for key in key_events.iter() {
         // println!("[EVENTS] MidiInputKey {} {}", key.id, key.event.to_string());
         let check_id = key.id as usize;
-        println!("[COLLISION] Key pressed...");
 
         // Loop through all the active notes on screen
-        for (transform, id_component) in notes.iter() {
+        for (transform, id_component, note_time_component) in notes.iter() {
             let PianoKeyId(id) = id_component;
+            let TimelineNoteTime(note_time) = note_time_component;
             println!("[COLLISION] Checking note ID {} vs {}", id, check_id);
             // Did the user hit a note floating around?
             if id == &check_id {
@@ -331,8 +332,26 @@ pub fn check_timeline_collisions(
 
                 if transform.translation.x <= WHITE_KEY_HEIGHT {
                     println!("[COLLISION] Key pressed in time or after");
+                    let current_time = timeline_state.timer.elapsed_secs();
+                    println!(
+                        "[COLLISION] User time: {} - Note time: {}",
+                        current_time, note_time,
+                    );
                 }
             }
+        }
+    }
+}
+
+// Check for input events and change color of 3D piano keys
+pub fn clear_complete_timeline_notes(
+    mut commands: Commands,
+    notes: Query<(&Transform, Entity), With<TimelineNote>>,
+) {
+    // Loop through all the active notes on screen
+    for (note_transform, note_entity) in notes.iter() {
+        if note_transform.translation.y <= TIMELINE_BOTTOM {
+            commands.entity(note_entity).despawn();
         }
     }
 }
@@ -623,6 +642,9 @@ fn debug_game_ui(
             timeline_state.playing = false;
             timeline_state.timer.reset();
             timeline_state.timer.pause();
+
+            // @TODO: Add a reset event or flag so the game can
+            // clear any 3D notes before starting new scene
         }
     });
 }
