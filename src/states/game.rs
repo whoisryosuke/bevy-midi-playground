@@ -3,6 +3,7 @@ use bevy_egui::{
     egui::{self, Color32},
     EguiContexts,
 };
+use bevy_rapier3d::prelude::*;
 
 use crate::{
     debug::DebugState,
@@ -47,6 +48,17 @@ pub enum PianoKeyType {
     // Button,
 }
 
+// The Floor entity. Used to filter some collision events.
+#[derive(Component)]
+pub struct Floor;
+
+// The Enemy entity. Used to filter some collision events.
+#[derive(Component)]
+pub struct Enemy {
+    name: String,
+    score: i32,
+}
+
 // Constants
 const NUM_TOTAL_KEYS: usize = 61;
 const NUM_WHITE_KEYS: usize = 36;
@@ -66,13 +78,16 @@ impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
         app.add_system(game_setup.in_schedule(OnEnter(AppState::Game)))
             .add_system(spawn_piano.in_schedule(OnEnter(AppState::Game)))
+            .add_system(spawn_enemies.in_schedule(OnEnter(AppState::Game)))
             // Game loop
             .add_system(game_system.in_set(OnUpdate(AppState::Game)))
             .add_system(highlight_keys.in_set(OnUpdate(AppState::Game)))
             .add_system(spawn_music_notes.in_set(OnUpdate(AppState::Game)))
             .add_system(animate_music_notes.in_set(OnUpdate(AppState::Game)))
             .add_system(clear_music_notes.in_set(OnUpdate(AppState::Game)))
-            // .add_system(debug_sync_camera.in_set(OnUpdate(AppState::Game)))
+            .add_system(display_collision_events.in_set(OnUpdate(AppState::Game)))
+            // .add_system(check_collisions_manual.in_set(OnUpdate(AppState::Game)))
+            .add_system(debug_sync_camera.in_set(OnUpdate(AppState::Game)))
             // Cleanup
             .add_system(game_cleanup.in_schedule(OnExit(AppState::Game)));
     }
@@ -88,7 +103,10 @@ pub fn spawn_piano(
     const KEY_ORDER: [i32; 12] = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0];
 
     commands
-        .spawn((Piano, SpatialBundle::default()))
+        .spawn((
+            Piano,
+            SpatialBundle::from_transform(Transform::from_xyz(0.0, 20.0, 0.0)),
+        ))
         .with_children(|children| {
             // A set of keys is 12 (5 black, 7 white)
             let mut white_key_offset = 0;
@@ -161,7 +179,7 @@ pub fn spawn_music_notes(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut key_events: EventReader<MidiInputKey>,
-    piano_keys: Query<(&Transform, &PianoKeyId), With<PianoKey>>,
+    piano_keys: Query<(&GlobalTransform, &PianoKeyId), With<PianoKey>>,
     mut music_notes: Query<(&PianoNote, &mut PianoNoteEvent)>,
     midi_state: Res<MidiInputState>,
 ) {
@@ -192,12 +210,23 @@ pub fn spawn_music_notes(
                 });
 
                 if let Some((piano_key_transform, _)) = piano_key_result {
-                    // println!("[SPAWN] Music note - spawned");
+                    let transform = piano_key_transform.compute_transform();
+                    println!(
+                        "[SPAWN] Music note - spawned {} {}",
+                        transform.translation.x, transform.translation.y
+                    );
                     let note_id = (key.id as i32) - octave_offset;
                     // Spawn note where key is
                     commands.spawn((
                         PianoNote(note_id as usize),
                         PianoNoteEvent(MidiEvents::Pressed),
+                        // Physics
+                        Collider::cuboid(WHITE_KEY_WIDTH, 0.5, -WHITE_KEY_DEPTH),
+                        // Needed to detect collision events
+                        // ActiveEvents::COLLISION_EVENTS,
+                        RigidBody::Dynamic,
+                        Velocity::default(),
+                        ContactForceEventThreshold(30.0),
                         // Mesh
                         PbrBundle {
                             mesh: meshes.add(Mesh::from(shape::Box::new(
@@ -207,9 +236,9 @@ pub fn spawn_music_notes(
                             ))),
                             material: materials.add(Color::TEAL.into()),
                             transform: Transform::from_xyz(
-                                piano_key_transform.translation.x,
-                                piano_key_transform.translation.y + WHITE_KEY_HEIGHT / 2.0,
-                                piano_key_transform.translation.z,
+                                transform.translation.x,
+                                transform.translation.y - WHITE_KEY_HEIGHT,
+                                transform.translation.z,
                             ),
                             ..default()
                         },
@@ -236,23 +265,35 @@ pub fn spawn_music_notes(
 }
 
 pub fn animate_music_notes(
-    mut notes: Query<(&mut Transform, &PianoNoteEvent), With<PianoNote>>,
+    mut notes: Query<(&mut Transform, &mut Velocity, &PianoNoteEvent), With<PianoNote>>,
     time: Res<Time>,
 ) {
-    let animation_speed = 5.0;
-    let animation_delta = time.delta().as_secs_f32() * animation_speed;
+    let animation_speed = 1.0;
+    // let animation_delta = time.delta().as_secs_f32() * animation_speed;
+    let animation_delta = animation_speed;
 
-    for (mut note, key_type_component) in notes.iter_mut() {
+    for (mut note, mut velocity, key_type_component) in notes.iter_mut() {
+        println!(
+            "animating note {} {}",
+            note.translation.x, note.translation.y
+        );
         let PianoNoteEvent(key_type) = key_type_component;
         if key_type == &MidiEvents::Pressed {
             let scale_speed = 5.0;
             let scale_delta = time.delta().as_secs_f32() * scale_speed;
             // Scale up gradually
-            note.scale.y += scale_delta;
-            note.translation.y += animation_delta / 3.0;
+            // note.scale.y += scale_delta;
+            // note.translation.y += animation_delta / 3.0;
+            // velocity.linvel.y += animation_delta / 3.0;
+            // velocity.linvel.y -= animation_delta / 3.0;
+            // velocity.linvel.x -= animation_delta / 3.0;
         } else {
             // Move up
-            note.translation.y += animation_delta;
+            // note.translation.y += animation_delta;
+            // velocity.linvel.y += animation_delta;
+            velocity.linvel -= Vec3::new(0.0, 1.0, 0.0);
+            // velocity.linvel.y -= animation_delta;
+            // velocity.linvel.x -= animation_delta;
         }
     }
 }
@@ -334,7 +375,52 @@ pub fn highlight_keys(
     }
 }
 
-pub fn game_setup(mut commands: Commands) {
+pub fn spawn_enemies(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let enemy_size = 2.0;
+    commands.spawn((
+        Enemy {
+            name: "Test enemy".to_string(),
+            score: 100,
+        },
+        Collider::cuboid(enemy_size, enemy_size, enemy_size),
+        ColliderDebugColor(Color::hsl(220.3, 1.0, 220.3)),
+        // Needed to detect collision events
+        ActiveEvents::COLLISION_EVENTS,
+        PbrBundle {
+            mesh: meshes.add(shape::Box::new(enemy_size, enemy_size, enemy_size).into()),
+            material: materials.add(Color::hex("#DDDDDD").unwrap().into()),
+            transform: Transform::from_xyz(10.0, 20.0, 0.0),
+            ..default()
+        },
+    ));
+
+    commands.spawn((
+        Enemy {
+            name: "Test enemy".to_string(),
+            score: 100,
+        },
+        Collider::cuboid(enemy_size, enemy_size, enemy_size),
+        ColliderDebugColor(Color::hsl(220.3, 1.0, 220.3)),
+        // Needed to detect collision events
+        ActiveEvents::COLLISION_EVENTS,
+        PbrBundle {
+            mesh: meshes.add(shape::Box::new(enemy_size, enemy_size, enemy_size).into()),
+            material: materials.add(Color::hex("#DDDDDD").unwrap().into()),
+            transform: Transform::from_xyz(30.0, 30.0, -enemy_size),
+            ..default()
+        },
+    ));
+}
+
+pub fn game_setup(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
     println!("Game setup");
 
     // Camera
@@ -357,6 +443,66 @@ pub fn game_setup(mut commands: Commands) {
         transform: Transform::from_xyz(4.0, 8.0, 4.0),
         ..default()
     });
+
+    // Floor / ground
+    let ground_size = 200.1;
+    let ground_height = 0.01;
+
+    commands.spawn((
+        Floor,
+        Collider::cuboid(ground_size, ground_height, ground_size),
+        PbrBundle {
+            mesh: meshes.add(shape::Plane::from_size(ground_size).into()),
+            material: materials.add(Color::hex("#DDDDDD").unwrap().into()),
+            transform: Transform::from_xyz(0.0, -ground_height, 0.0),
+            ..default()
+        },
+    ));
+}
+
+fn display_collision_events(
+    // mut commands: Commands,
+    mut collision_events: EventReader<CollisionEvent>,
+    mut contact_force_events: EventReader<ContactForceEvent>,
+    // mut attach_events: EventWriter<AttachObjectEvent>,
+    // player_entity: Query<Entity, With<Player>>,
+    // floor_entity: Query<Entity, With<Floor>>,
+) {
+    // Check for collisions
+    for collision_event in collision_events.iter() {
+        match collision_event {
+            CollisionEvent::Started(first_entity, second_entity, _) => {
+                println!(
+                    "{} collided with {}",
+                    first_entity.index(),
+                    second_entity.index()
+                );
+            }
+            CollisionEvent::Stopped(first_entity, second_entity, event) => {}
+        }
+    }
+
+    for contact_force_event in contact_force_events.iter() {
+        println!("Received contact force event: {contact_force_event:?}");
+    }
+}
+
+pub fn check_collisions_manual(
+    enemies: Query<&Transform, With<Enemy>>,
+    notes: Query<&Transform, With<PianoNote>>,
+) {
+    for enemy in enemies.iter() {
+        println!(
+            "[ENEMY] Position: {} {}",
+            enemy.translation.x, enemy.translation.y
+        );
+    }
+    for note in notes.iter() {
+        println!(
+            "[NOTE] Position: {} {}",
+            note.translation.x, note.translation.y
+        );
+    }
 }
 
 pub fn debug_sync_camera(

@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 bevy = "0.10.1"
 bevy_egui = "0.20.2"
+bevy_rapier3d = {version= "0.21.0", features = ["simd-stable", "debug-render-3d" ]}
 chrono = "0.4.24"
 crossbeam-channel = "0.5.8"
 midir = "0.9.1"

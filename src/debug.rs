@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
+use bevy_rapier3d::prelude::*;
 
 // App-level debug state
 #[derive(Resource)]
@@ -18,10 +19,11 @@ impl Plugin for DebugPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(DebugState {
             visible: false,
-            debug_position: Vec3::splat(0.0),
-            camera_look: Vec3::new(0.0, 10.0, 0.0),
-            rotation: Vec3::splat(0.0),
+            debug_position: Vec3::new(18.0, 13.0, 37.0),
+            camera_look: Vec3::new(0.0, 0.0, 0.0),
+            rotation: Vec3::new(0.0, 0.0, 0.0),
         })
+        .add_plugin(RapierDebugRenderPlugin::default())
         .add_system(debug_ui)
         .add_system(debug_controls);
     }
@@ -45,9 +47,9 @@ fn debug_ui(mut contexts: EguiContexts, mut debug_state: ResMut<DebugState>) {
             });
             ui.horizontal(|ui| {
                 ui.label("Rotation");
-                ui.add(egui::DragValue::new(&mut debug_state.rotation.x).speed(0.1));
-                ui.add(egui::DragValue::new(&mut debug_state.rotation.y).speed(0.1));
-                ui.add(egui::DragValue::new(&mut debug_state.rotation.z).speed(0.1));
+                ui.add(egui::DragValue::new(&mut debug_state.rotation.x).speed(0.01));
+                ui.add(egui::DragValue::new(&mut debug_state.rotation.y).speed(0.01));
+                ui.add(egui::DragValue::new(&mut debug_state.rotation.z).speed(0.01));
             });
         });
     }

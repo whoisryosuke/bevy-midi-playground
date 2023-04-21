@@ -1,5 +1,6 @@
 use bevy::{prelude::*, window::WindowResolution};
 use bevy_egui::EguiPlugin;
+use bevy_rapier3d::prelude::*;
 
 use debug::DebugPlugin;
 use midi::MidiInputPlugin;
@@ -19,6 +20,7 @@ fn main() {
             }),
             ..default()
         }))
+        .add_plugin(RapierPhysicsPlugin::<NoUserData>::default())
         .add_plugin(EguiPlugin)
         .add_plugin(MidiInputPlugin)
         .add_plugin(AppStatePlugin)
