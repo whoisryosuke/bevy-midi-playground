@@ -68,7 +68,7 @@ impl Plugin for GamePlugin {
             .add_system(spawn_music_notes.in_set(OnUpdate(AppState::Game)))
             .add_system(animate_music_notes.in_set(OnUpdate(AppState::Game)))
             .add_system(clear_music_notes.in_set(OnUpdate(AppState::Game)))
-            // .add_system(debug_sync_camera.in_set(OnUpdate(AppState::Game)))
+            .add_system(debug_sync_camera.in_set(OnUpdate(AppState::Game)))
             // Cleanup
             .add_system(game_cleanup.in_schedule(OnExit(AppState::Game)));
     }
@@ -357,6 +357,11 @@ pub fn debug_sync_camera(
         camera.translation.z = debug_state.debug_position.z;
 
         camera.look_at(debug_state.camera_look, Vec3::Y);
+
+        // Sync rotation
+        camera.rotation.x = debug_state.rotation.x;
+        camera.rotation.y = debug_state.rotation.y;
+        camera.rotation.z = debug_state.rotation.z;
     }
 }
 
