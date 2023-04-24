@@ -9,6 +9,7 @@ use bevy_rapier3d::prelude::*;
 
 use crate::{
     debug::DebugState,
+    enemy::{EnemyColliderEvent, EnemyPlugin},
     midi::{MidiEvents, MidiInputKey, MidiInputState},
 };
 
@@ -54,20 +55,6 @@ pub enum PianoKeyType {
 #[derive(Component)]
 pub struct Floor;
 
-// The Enemy entity. Used to filter some collision events.
-#[derive(Component)]
-pub struct Enemy {
-    name: String,
-    score: i32,
-    destroy: bool,
-    timer: Option<Timer>,
-}
-
-// Events
-
-// Notes collided with enemy
-pub struct EnemyColliderEvent(Entity);
-
 // Constants
 const NUM_TOTAL_KEYS: usize = 61;
 const NUM_WHITE_KEYS: usize = 36;
@@ -85,20 +72,16 @@ pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<EnemyColliderEvent>()
+        app.add_plugin(EnemyPlugin)
             .add_system(game_setup.in_schedule(OnEnter(AppState::Game)))
             .add_system(spawn_piano.in_schedule(OnEnter(AppState::Game)))
-            .add_system(spawn_enemies.in_schedule(OnEnter(AppState::Game)))
             // Game loop
             .add_system(game_system.in_set(OnUpdate(AppState::Game)))
             .add_system(highlight_keys.in_set(OnUpdate(AppState::Game)))
             .add_system(spawn_music_notes.in_set(OnUpdate(AppState::Game)))
             .add_system(animate_music_notes.in_set(OnUpdate(AppState::Game)))
             .add_system(clear_music_notes.in_set(OnUpdate(AppState::Game)))
-            .add_system(display_collision_events.in_set(OnUpdate(AppState::Game)))
-            .add_system(mark_enemy_for_destruction.in_set(OnUpdate(AppState::Game)))
-            .add_system(enemy_destruction_animation.in_set(OnUpdate(AppState::Game)))
-            .add_system(enemy_destruction_despawn.in_set(OnUpdate(AppState::Game)))
+            .add_system(handle_collision_events.in_set(OnUpdate(AppState::Game)))
             // .add_system(check_collisions_manual.in_set(OnUpdate(AppState::Game)))
             .add_system(debug_sync_camera.in_set(OnUpdate(AppState::Game)))
             // Cleanup
@@ -400,51 +383,6 @@ pub fn highlight_keys(
     }
 }
 
-pub fn spawn_enemies(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    let enemy_size = 0.5;
-    commands.spawn((
-        Enemy {
-            name: "Test enemy 1".to_string(),
-            score: 100,
-            destroy: false,
-            timer: None,
-        },
-        Collider::cuboid(enemy_size, enemy_size, enemy_size),
-        ColliderDebugColor(Color::hsl(220.3, 1.0, 220.3)),
-        // Needed to detect collision events
-        ActiveEvents::COLLISION_EVENTS,
-        PbrBundle {
-            mesh: meshes.add(shape::Box::new(enemy_size, enemy_size, enemy_size).into()),
-            material: materials.add(Color::hex("#DDDDDD").unwrap().into()),
-            transform: Transform::from_xyz(10.0, 15.0, 0.0),
-            ..default()
-        },
-    ));
-
-    commands.spawn((
-        Enemy {
-            name: "Test enemy 2".to_string(),
-            score: 100,
-            destroy: false,
-            timer: None,
-        },
-        Collider::cuboid(enemy_size, enemy_size, enemy_size),
-        ColliderDebugColor(Color::hsl(220.3, 1.0, 220.3)),
-        // Needed to detect collision events
-        ActiveEvents::COLLISION_EVENTS,
-        PbrBundle {
-            mesh: meshes.add(shape::Box::new(enemy_size, enemy_size, enemy_size).into()),
-            material: materials.add(Color::hex("#DDDDDD").unwrap().into()),
-            transform: Transform::from_xyz(30.0, 10.0, -enemy_size),
-            ..default()
-        },
-    ));
-}
-
 pub fn game_setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -498,13 +436,10 @@ pub fn game_setup(
     ));
 }
 
-fn display_collision_events(
-    mut commands: Commands,
+fn handle_collision_events(
     mut collision_events: EventReader<CollisionEvent>,
     mut contact_force_events: EventReader<ContactForceEvent>,
-    mut enemy_collider_event: EventWriter<EnemyColliderEvent>, // mut attach_events: EventWriter<AttachObjectEvent>,
-                                                               // player_entity: Query<Entity, With<Player>>,
-                                                               // floor_entity: Query<Entity, With<Floor>>,
+    mut enemy_collider_event: EventWriter<EnemyColliderEvent>,
 ) {
     // Check for collisions
     for collision_event in collision_events.iter() {
@@ -516,15 +451,6 @@ fn display_collision_events(
                     second_entity.index()
                 );
                 enemy_collider_event.send(EnemyColliderEvent(*first_entity));
-                // commands.entity(*first_entity).insert((
-                //     RigidBody::Dynamic,
-                //     Velocity {
-                //         linvel: Vec3::new(0.0, -1.0, 0.0),
-                //         angvel: Vec3::ZERO,
-                //     },
-                // ));
-                // commands.entity(*first_entity).insert(RigidBody::Dynamic);
-                // commands.entity(*second_entity).insert(RigidBody::Dynamic);
             }
             CollisionEvent::Stopped(first_entity, second_entity, event) => {}
         }
@@ -532,72 +458,6 @@ fn display_collision_events(
 
     for contact_force_event in contact_force_events.iter() {
         println!("Received contact force event: {contact_force_event:?}");
-    }
-}
-
-pub fn mark_enemy_for_destruction(
-    mut collider_events: EventReader<EnemyColliderEvent>,
-    mut enemies: Query<&mut Enemy>,
-) {
-    if !collider_events.is_empty() {
-        // We loop over all events and use the event's collider entity index
-        for event in collider_events.iter() {
-            let EnemyColliderEvent(enemy_entity) = event;
-
-            let mut enemy_data = enemies.get_mut(*enemy_entity).unwrap();
-
-            enemy_data.destroy = true;
-            enemy_data.timer = Some(Timer::from_seconds(2.0, TimerMode::Once));
-        }
-    }
-}
-
-pub fn enemy_destruction_animation(
-    mut enemies: Query<(&mut Enemy, &mut Transform)>,
-    time: Res<Time>,
-) {
-    for (mut enemy, mut enemy_position) in enemies.iter_mut() {
-        if enemy.destroy {
-            let mut timer = enemy.timer.as_mut().unwrap();
-            timer.tick(time.delta());
-            let elapsed = timer.elapsed_secs();
-            enemy_position.rotate_y(elapsed * 3.0);
-        }
-    }
-}
-
-pub fn enemy_destruction_despawn(
-    mut commands: Commands,
-    mut enemies: Query<(&mut Enemy, Entity)>,
-    time: Res<Time>,
-) {
-    for (mut enemy, enemy_entity) in enemies.iter_mut() {
-        if enemy.destroy {
-            let mut timer = enemy.timer.as_mut().unwrap();
-            timer.tick(time.delta());
-
-            if timer.finished() {
-                commands.entity(enemy_entity).despawn();
-            }
-        }
-    }
-}
-
-pub fn check_collisions_manual(
-    enemies: Query<&Transform, With<Enemy>>,
-    notes: Query<&Transform, With<PianoNote>>,
-) {
-    for enemy in enemies.iter() {
-        println!(
-            "[ENEMY] Position: {} {}",
-            enemy.translation.x, enemy.translation.y
-        );
-    }
-    for note in notes.iter() {
-        println!(
-            "[NOTE] Position: {} {}",
-            note.translation.x, note.translation.y
-        );
     }
 }
 

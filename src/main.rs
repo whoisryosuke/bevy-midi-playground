@@ -7,6 +7,7 @@ use midi::MidiInputPlugin;
 use states::AppStatePlugin;
 
 mod debug;
+mod enemy;
 mod midi;
 mod states;
 
