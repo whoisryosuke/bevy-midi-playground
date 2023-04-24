@@ -23,7 +23,7 @@ pub struct Enemy {
 const ENEMY_SPAWN_TIME: f32 = 3.0;
 const ENEMY_MAX_COUNT: i32 = 10;
 const ENEMY_SIZE: f32 = 0.5;
-const ENEMY_MOVE_TIME: f32 = 0.5;
+const ENEMY_MOVE_TIME: f32 = 0.1;
 const ENEMY_DEATH_TIME: f32 = 0.5;
 
 #[derive(Resource)]
@@ -146,10 +146,14 @@ fn enemy_spawn_manager(
     }
 }
 
-fn generate_new_move(start_time: f32) -> Option<EnemyMove> {
+fn generate_new_move(start_time: f32, initial_position: &Vec3) -> Option<EnemyMove> {
     let mut rng = rand::thread_rng();
-    let position_x = rng.gen_range(10.0..30.0);
-    let position_y = rng.gen_range(5.0..15.0);
+    let direction = rng.gen_range(-1..1) as f32;
+    let direction = if direction == 0.0 { 1.0 } else { direction };
+    let random_x = rng.gen_range(0.1..1.0);
+    let random_y = rng.gen_range(0.05..0.5);
+    let position_x = initial_position.x + (random_x * direction);
+    let position_y = initial_position.y + (random_y * direction);
     Some(EnemyMove {
         movement: Vec2::new(position_x, position_y),
         start_time,
@@ -179,7 +183,8 @@ fn enemy_animation(mut enemies: Query<(&mut Transform, &mut Enemy)>, time: Res<T
             //     start_time: time.elapsed_seconds(),
             // });
 
-            enemy_data.next_move = generate_new_move(time.elapsed_seconds());
+            enemy_data.next_move =
+                generate_new_move(time.elapsed_seconds(), &enemy_position.translation);
         }
 
         // Done? Next move
@@ -187,7 +192,8 @@ fn enemy_animation(mut enemies: Query<(&mut Transform, &mut Enemy)>, time: Res<T
             let time_delta = time.elapsed_seconds() - enemy_move.start_time;
             // Longer than animation time? New move
             if time_delta > ENEMY_MOVE_TIME {
-                enemy_data.next_move = generate_new_move(time.elapsed_seconds());
+                enemy_data.next_move =
+                    generate_new_move(time.elapsed_seconds(), &enemy_position.translation);
             }
         }
 
