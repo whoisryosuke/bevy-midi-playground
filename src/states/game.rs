@@ -437,6 +437,7 @@ pub fn game_setup(
 }
 
 fn handle_collision_events(
+    mut commands: Commands,
     mut collision_events: EventReader<CollisionEvent>,
     mut contact_force_events: EventReader<ContactForceEvent>,
     mut enemy_collider_event: EventWriter<EnemyColliderEvent>,
@@ -450,7 +451,12 @@ fn handle_collision_events(
                     first_entity.index(),
                     second_entity.index()
                 );
+                // Trigger enemy destruction
                 enemy_collider_event.send(EnemyColliderEvent(*first_entity));
+
+                // Despawn the piano note cause it'll just sit there
+                // @TODO: Animate it too why not
+                commands.entity(*second_entity).despawn();
             }
             CollisionEvent::Stopped(first_entity, second_entity, event) => {}
         }
