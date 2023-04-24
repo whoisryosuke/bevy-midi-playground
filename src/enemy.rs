@@ -195,10 +195,6 @@ fn enemy_animation(mut enemies: Query<(&mut Transform, &mut Enemy)>, time: Res<T
         if let Some(enemy_move) = &enemy_data.next_move {
             let time_delta = time.elapsed_seconds() - enemy_move.start_time;
 
-            println!(
-                "moving enemy {} {} {}",
-                time_delta, enemy_move.movement.x, enemy_move.movement.y
-            );
             // Calculate rate of range
             // We want enemies to move relative to the movement
             // So bigger moves = longer time to move
