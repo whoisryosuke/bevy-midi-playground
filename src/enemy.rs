@@ -23,6 +23,8 @@ pub struct Enemy {
 const ENEMY_SPAWN_TIME: f32 = 3.0;
 const ENEMY_MAX_COUNT: i32 = 2;
 const ENEMY_SIZE: f32 = 0.5;
+const ENEMY_MOVE_TIME: f32 = 0.5;
+const ENEMY_DEATH_TIME: f32 = 0.5;
 
 #[derive(Resource)]
 pub struct EnemyState {
@@ -74,7 +76,7 @@ pub fn mark_enemy_for_destruction(
 
             // Set it to destroy and create new internal timer
             enemy_data.destroy = true;
-            enemy_data.timer = Some(Timer::from_seconds(2.0, TimerMode::Once));
+            enemy_data.timer = Some(Timer::from_seconds(ENEMY_DEATH_TIME, TimerMode::Once));
         }
     }
 }
@@ -184,7 +186,7 @@ fn enemy_animation(mut enemies: Query<(&mut Transform, &mut Enemy)>, time: Res<T
         if let Some(enemy_move) = &mut enemy_data.next_move {
             let time_delta = time.elapsed_seconds() - enemy_move.start_time;
             // Longer than animation time? New move
-            if time_delta > 2.0 {
+            if time_delta > ENEMY_MOVE_TIME {
                 enemy_data.next_move = generate_new_move(time.elapsed_seconds());
             }
         }
@@ -203,7 +205,7 @@ fn enemy_animation(mut enemies: Query<(&mut Transform, &mut Enemy)>, time: Res<T
             // 3 seconds - 2 seconds = 1 second
             // 30 / 10 = 3 * 2 = 6
             // let rate_of_change = (enemy_move.movement.x / 10.0) * 2.0;
-            let movement_speed = time_delta / 2.0;
+            let movement_speed = time_delta / ENEMY_MOVE_TIME;
             enemy_position.translation = enemy_position.translation.lerp(
                 Vec3::new(
                     enemy_move.movement.x,
