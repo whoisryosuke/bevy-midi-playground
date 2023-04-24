@@ -21,7 +21,7 @@ pub struct Enemy {
 }
 
 const ENEMY_SPAWN_TIME: f32 = 3.0;
-const ENEMY_MAX_COUNT: i32 = 2;
+const ENEMY_MAX_COUNT: i32 = 10;
 const ENEMY_SIZE: f32 = 0.5;
 const ENEMY_MOVE_TIME: f32 = 0.5;
 const ENEMY_DEATH_TIME: f32 = 0.5;
