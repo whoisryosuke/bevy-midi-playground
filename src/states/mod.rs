@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use self::{device_select::DeviceSelectPlugin, game::GamePlugin, start_menu::StartMenuPlugin};
 
 mod device_select;
-mod game;
+pub mod game;
 mod start_menu;
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]

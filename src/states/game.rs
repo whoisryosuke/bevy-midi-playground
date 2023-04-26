@@ -9,7 +9,7 @@ use bevy_rapier3d::prelude::*;
 
 use crate::{
     debug::DebugState,
-    enemy::{EnemyColliderEvent, EnemyPlugin},
+    enemy::{Enemy, EnemyColliderEvent, EnemyPlugin},
     midi::{MidiEvents, MidiInputKey, MidiInputState},
 };
 
@@ -59,7 +59,7 @@ pub struct Floor;
 const NUM_TOTAL_KEYS: usize = 61;
 const NUM_WHITE_KEYS: usize = 36;
 const NUM_BLACK_KEYS: usize = 25;
-const WHITE_KEY_WIDTH: f32 = 1.0;
+pub const WHITE_KEY_WIDTH: f32 = 1.0;
 const WHITE_KEY_HEIGHT: f32 = 5.5;
 const WHITE_KEY_DEPTH: f32 = 0.25;
 const BLACK_KEY_WIDTH: f32 = 0.5;
@@ -441,6 +441,8 @@ fn handle_collision_events(
     mut collision_events: EventReader<CollisionEvent>,
     mut contact_force_events: EventReader<ContactForceEvent>,
     mut enemy_collider_event: EventWriter<EnemyColliderEvent>,
+    enemies: Query<Entity, With<Enemy>>,
+    notes: Query<Entity, With<PianoNote>>,
 ) {
     // Check for collisions
     for collision_event in collision_events.iter() {
@@ -451,12 +453,35 @@ fn handle_collision_events(
                     first_entity.index(),
                     second_entity.index()
                 );
-                // Trigger enemy destruction
-                enemy_collider_event.send(EnemyColliderEvent(*first_entity));
 
-                // Despawn the piano note cause it'll just sit there
-                // @TODO: Animate it too why not
-                commands.entity(*second_entity).despawn();
+                // Figure out if 2 colliding objects are enemy and a note
+                // Enemy check
+                let mut enemy_entity = first_entity;
+                let is_first_enemy = enemies.contains(*first_entity);
+                let is_second_enemy = enemies.contains(*second_entity);
+                if is_second_enemy {
+                    enemy_entity = second_entity;
+                }
+                let is_enemy = is_first_enemy || is_second_enemy;
+
+                // Note check
+                let mut note_entity = first_entity;
+                let is_first_note = notes.contains(*first_entity);
+                let is_second_note = notes.contains(*second_entity);
+                if is_second_note {
+                    note_entity = second_entity;
+                }
+                let is_note = is_first_note || is_second_note;
+
+                // Did a note collide with an enemy?
+                if is_enemy && is_note {
+                    // Trigger enemy destruction
+                    enemy_collider_event.send(EnemyColliderEvent(*enemy_entity));
+
+                    // Despawn the piano note cause it'll just sit there
+                    // @TODO: Animate it too why not
+                    commands.entity(*note_entity).despawn();
+                }
             }
             CollisionEvent::Stopped(first_entity, second_entity, event) => {}
         }

@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
 use rand::Rng;
 
+use crate::states::game::{PianoKey, PianoKeyType, WHITE_KEY_WIDTH};
 use crate::states::AppState;
 // Resources
 
@@ -20,11 +21,18 @@ pub struct Enemy {
     next_move: Option<EnemyMove>,
 }
 
+#[derive(Component)]
+pub struct EnemyProjectile;
+
 const ENEMY_SPAWN_TIME: f32 = 3.0;
-const ENEMY_MAX_COUNT: i32 = 10;
+const ENEMY_MAX_COUNT: i32 = 2;
 const ENEMY_SIZE: f32 = 0.5;
 const ENEMY_MOVE_TIME: f32 = 0.1;
 const ENEMY_DEATH_TIME: f32 = 0.5;
+// Projectiles
+const ENEMY_SHOOT_TIMER_MIN: f32 = 1.0;
+const ENEMY_SHOOT_TIMER_MAX: f32 = 3.0;
+const ENEMY_SHOT_SIZE: f32 = 0.25;
 
 #[derive(Resource)]
 pub struct EnemyState {
@@ -57,6 +65,9 @@ impl Plugin for EnemyPlugin {
             .add_system(mark_enemy_for_destruction.in_set(OnUpdate(AppState::Game)))
             .add_system(enemy_destruction_animation.in_set(OnUpdate(AppState::Game)))
             .add_system(enemy_animation.in_set(OnUpdate(AppState::Game)))
+            .add_system(enemy_shooting.in_set(OnUpdate(AppState::Game)))
+            .add_system(enemy_projectile_animation.in_set(OnUpdate(AppState::Game)))
+            .add_system(detect_enemy_collision.in_set(OnUpdate(AppState::Game)))
             // Cleanup
             .add_system(enemy_cleanup.in_schedule(OnExit(AppState::Game)));
     }
@@ -221,6 +232,126 @@ fn enemy_animation(mut enemies: Query<(&mut Transform, &mut Enemy)>, time: Res<T
     }
 }
 
+fn enemy_shooting(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut enemies: Query<(&mut Enemy, &Transform)>,
+    time: Res<Time>,
+) {
+    for (mut enemy, enemy_position) in enemies.iter_mut() {
+        // Marked for destruction? Ignore it.
+        if enemy.destroy {
+            return;
+        }
+
+        match &mut enemy.timer {
+            Some(timer) => {
+                // Tick the timer
+                timer.tick(time.delta());
+
+                if timer.finished() {
+                    // Shoot
+                    println!("[PROJECTILE] enemy shooting");
+
+                    // Spawn projectile
+                    commands.spawn((
+                        EnemyProjectile,
+                        PbrBundle {
+                            mesh: meshes.add(
+                                shape::Box::new(ENEMY_SHOT_SIZE, ENEMY_SHOT_SIZE, ENEMY_SHOT_SIZE)
+                                    .into(),
+                            ),
+                            material: materials.add(Color::RED.into()),
+                            transform: Transform::from_xyz(
+                                enemy_position.translation.x,
+                                enemy_position.translation.y,
+                                enemy_position.translation.z,
+                            ),
+                            ..default()
+                        },
+                    ));
+
+                    // Reset timer
+                    let duration = create_enemy_shot_timer();
+                    enemy.timer = Some(Timer::from_seconds(duration, TimerMode::Once));
+                }
+            }
+            None => {
+                println!("[PROJECTILE] no timer, creating one");
+                let duration = create_enemy_shot_timer();
+                enemy.timer = Some(Timer::from_seconds(duration, TimerMode::Once));
+            }
+        }
+    }
+}
+
+fn enemy_projectile_animation(mut projectiles: Query<&mut Transform, With<EnemyProjectile>>) {
+    for mut projectile in projectiles.iter_mut() {
+        projectile.translation.y += 0.1;
+    }
+}
+
+fn detect_enemy_collision(
+    mut command: Commands,
+    projectiles: Query<(Entity, &Transform), With<EnemyProjectile>>,
+    keys: Query<(&Transform, &PianoKeyType), With<PianoKey>>,
+) {
+    // Quickly check the height of piano keys
+    // Get the first key
+    let key_result = keys
+        .iter()
+        .enumerate()
+        .find(|(index, _)| *index == (0 as usize));
+    if let Some((_, (single_key_check, _))) = key_result {
+        println!("[PROJECTILE] Found a piano key to compare");
+        let key_height = single_key_check.translation.y;
+
+        // Loop through all the projectiles and check collisions
+        for (projectile_entity, projectile_position) in projectiles.iter() {
+            if projectile_position.translation.y > key_height {
+                println!("[PROJECTILE] Collided with player's piano");
+
+                // Figure out which white key got hit
+                let mut white_key_index = 0;
+                for (key_position, key_type) in keys.iter() {
+                    match key_type {
+                        // White key? Check if the projectile is in piano key "lane"
+                        PianoKeyType::White => {
+                            let key_size = key_position.translation.x + WHITE_KEY_WIDTH;
+                            if projectile_position.translation.x > key_position.translation.x
+                                && projectile_position.translation.x < key_size
+                            {
+                                // Found the key!
+                                println!("[PROJECTILE] Damage to key {}", &white_key_index);
+
+                                // Send "damage" event to piano key
+
+                                // Despawn / destruct projectile
+                                command.entity(projectile_entity).despawn();
+
+                                return;
+                            }
+
+                            white_key_index += 1;
+                        }
+                        // Ignore black keys
+                        PianoKeyType::Black => {
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn enemy_cleanup() {
     println!("[ENEMY] Cleaning up...");
+}
+
+fn create_enemy_shot_timer() -> f32 {
+    let mut rng = rand::thread_rng();
+    let duration = rng.gen_range(ENEMY_SHOOT_TIMER_MIN..ENEMY_SHOOT_TIMER_MAX);
+    duration
 }
