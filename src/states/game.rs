@@ -314,9 +314,10 @@ pub fn animate_music_timeline(
 
 // Check for input events and change color of 3D piano keys
 pub fn check_timeline_collisions(
+    mut commands: Commands,
     mut key_events: EventReader<MidiInputKey>,
     // midi_state: Res<MidiInputState>,
-    notes: Query<(&Transform, &PianoKeyId, &TimelineNoteTime), With<TimelineNote>>,
+    notes: Query<(Entity, &Transform, &PianoKeyId, &TimelineNoteTime), With<TimelineNote>>,
     timeline_state: Res<MusicTimelineState>,
     mut game_state: ResMut<GameState>,
 ) {
@@ -330,7 +331,7 @@ pub fn check_timeline_collisions(
         let check_id = key.id as usize;
 
         // Loop through all the active notes on screen
-        for (transform, id_component, note_time_component) in notes.iter() {
+        for (entity, transform, id_component, note_time_component) in notes.iter() {
             let PianoKeyId(id) = id_component;
             let TimelineNoteTime(note_time) = note_time_component;
             // println!("[COLLISION] Checking note ID {} vs {}", id, check_id);
@@ -347,17 +348,23 @@ pub fn check_timeline_collisions(
                         WHITE_KEY_HEIGHT - transform.translation.y
                     );
                     // Accuracy is determined by the placement of the note when user pressed key
-                    let accuracy = WHITE_KEY_HEIGHT - transform.translation.y;
+                    let accuracy = (WHITE_KEY_HEIGHT - transform.translation.y) / 5.0;
 
                     // Since the accuracy goes from 0.0 (super accurate) to 2.0+ (not as much)
                     // We find the accuracy "percentage" (e.g. 100 * 0.5)
                     // then we subtract from initial score.
                     let initial_score = 1000;
-                    let score = initial_score - ((initial_score as f32 * accuracy) as i32).min(0);
+                    let score = initial_score - ((initial_score as f32 * accuracy) as i32);
+                    println!("adding score {}", score);
 
+                    // Update game state with the new score
                     game_state.score += score;
 
-                    // Check time for debug
+                    // Destroy the note immediately
+                    // @TODO: Instead...mark it for destruction - animate it away
+                    commands.entity(entity).despawn_recursive();
+
+                    // Check time for debug purposes
                     let current_time = timeline_state.timer.elapsed_secs();
                     println!(
                         "[COLLISION] User time: {} - Note time: {}",
