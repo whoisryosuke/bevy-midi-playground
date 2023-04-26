@@ -640,6 +640,7 @@ fn debug_game_ui(
 
         if ui.button("Reset").clicked() {
             timeline_state.playing = false;
+            timeline_state.current = 0;
             timeline_state.timer.reset();
             timeline_state.timer.pause();
 
