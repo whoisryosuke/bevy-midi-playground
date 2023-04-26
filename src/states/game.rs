@@ -348,10 +348,12 @@ pub fn check_timeline_collisions(
                         WHITE_KEY_HEIGHT - transform.translation.y
                     );
                     // Accuracy is determined by the placement of the note when user pressed key
+                    // We divide by 5 because that's the max distance the user can make a mistake.
+                    // So we get a percentage of how bad they did from 0 - 5.
                     let accuracy = (WHITE_KEY_HEIGHT - transform.translation.y) / 5.0;
 
-                    // Since the accuracy goes from 0.0 (super accurate) to 2.0+ (not as much)
-                    // We find the accuracy "percentage" (e.g. 100 * 0.5)
+                    // Since the accuracy goes from 0.0 (super accurate) to 1.0 (not as much)
+                    // We find the percent of score to remove based on accuracy (e.g. score * 0.5)
                     // then we subtract from initial score.
                     let initial_score = 1000;
                     let score = initial_score - ((initial_score as f32 * accuracy) as i32);
