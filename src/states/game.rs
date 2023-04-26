@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_egui::{
-    egui::{self, Color32},
+    egui::{self, epaint, Color32},
     EguiContexts,
 };
 
@@ -73,6 +73,11 @@ pub struct TimelineNote;
 pub struct TimelineNoteTime(f32);
 
 #[derive(Resource)]
+pub struct GameState {
+    score: i32,
+}
+
+#[derive(Resource)]
 pub struct MusicTimelineState {
     current: usize,
     playing: bool,
@@ -120,32 +125,34 @@ pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(MusicTimelineState {
-            current: 0,
-            playing: false,
-            complete: false,
-            timer: Timer::from_seconds(0.0, TimerMode::Once),
-        })
-        .insert_resource(MusicTimeline {
-            timeline: MUSIC_TIMELINE,
-            total_time: TIMELINE_TOTAL_TIME,
-        })
-        .add_system(game_setup.in_schedule(OnEnter(AppState::Game)))
-        .add_system(spawn_piano.in_schedule(OnEnter(AppState::Game)))
-        // Game loop
-        .add_system(game_system.in_set(OnUpdate(AppState::Game)))
-        .add_system(highlight_keys.in_set(OnUpdate(AppState::Game)))
-        // .add_system(spawn_music_notes.in_set(OnUpdate(AppState::Game)))
-        // .add_system(animate_music_notes.in_set(OnUpdate(AppState::Game)))
-        // .add_system(clear_music_notes.in_set(OnUpdate(AppState::Game)))
-        .add_system(spawn_music_timeline.in_set(OnUpdate(AppState::Game)))
-        .add_system(animate_music_timeline.in_set(OnUpdate(AppState::Game)))
-        .add_system(check_timeline_collisions.in_set(OnUpdate(AppState::Game)))
-        .add_system(clear_complete_timeline_notes.in_set(OnUpdate(AppState::Game)))
-        .add_system(debug_sync_camera.in_set(OnUpdate(AppState::Game)))
-        .add_system(debug_game_ui.in_set(OnUpdate(AppState::Game)))
-        // Cleanup
-        .add_system(game_cleanup.in_schedule(OnExit(AppState::Game)));
+        app.insert_resource(GameState { score: 0 })
+            .insert_resource(MusicTimelineState {
+                current: 0,
+                playing: false,
+                complete: false,
+                timer: Timer::from_seconds(0.0, TimerMode::Once),
+            })
+            .insert_resource(MusicTimeline {
+                timeline: MUSIC_TIMELINE,
+                total_time: TIMELINE_TOTAL_TIME,
+            })
+            .add_system(game_setup.in_schedule(OnEnter(AppState::Game)))
+            .add_system(spawn_piano.in_schedule(OnEnter(AppState::Game)))
+            // Game loop
+            .add_system(game_system.in_set(OnUpdate(AppState::Game)))
+            .add_system(highlight_keys.in_set(OnUpdate(AppState::Game)))
+            // .add_system(spawn_music_notes.in_set(OnUpdate(AppState::Game)))
+            // .add_system(animate_music_notes.in_set(OnUpdate(AppState::Game)))
+            // .add_system(clear_music_notes.in_set(OnUpdate(AppState::Game)))
+            .add_system(spawn_music_timeline.in_set(OnUpdate(AppState::Game)))
+            .add_system(animate_music_timeline.in_set(OnUpdate(AppState::Game)))
+            .add_system(check_timeline_collisions.in_set(OnUpdate(AppState::Game)))
+            .add_system(clear_complete_timeline_notes.in_set(OnUpdate(AppState::Game)))
+            .add_system(score_ui.in_set(OnUpdate(AppState::Game)))
+            .add_system(debug_sync_camera.in_set(OnUpdate(AppState::Game)))
+            .add_system(debug_game_ui.in_set(OnUpdate(AppState::Game)))
+            // Cleanup
+            .add_system(game_cleanup.in_schedule(OnExit(AppState::Game)));
     }
 }
 
@@ -311,6 +318,7 @@ pub fn check_timeline_collisions(
     // midi_state: Res<MidiInputState>,
     notes: Query<(&Transform, &PianoKeyId, &TimelineNoteTime), With<TimelineNote>>,
     timeline_state: Res<MusicTimelineState>,
+    mut game_state: ResMut<GameState>,
 ) {
     if key_events.is_empty() {
         return;
@@ -325,13 +333,31 @@ pub fn check_timeline_collisions(
         for (transform, id_component, note_time_component) in notes.iter() {
             let PianoKeyId(id) = id_component;
             let TimelineNoteTime(note_time) = note_time_component;
-            println!("[COLLISION] Checking note ID {} vs {}", id, check_id);
+            // println!("[COLLISION] Checking note ID {} vs {}", id, check_id);
             // Did the user hit a note floating around?
             if id == &check_id {
-                println!("[COLLISION] Key pressed on note lane");
+                println!("[COLLISION] Key pressed on note lane {}", &id);
 
-                if transform.translation.x <= WHITE_KEY_HEIGHT {
-                    println!("[COLLISION] Key pressed in time or after");
+                // @TODO: Add a "buffer"/offset above key height to help player
+                if transform.translation.y <= WHITE_KEY_HEIGHT {
+                    println!(
+                        "[COLLISION] Key pressed in time or after {} - {} = {}",
+                        transform.translation.y,
+                        WHITE_KEY_HEIGHT,
+                        WHITE_KEY_HEIGHT - transform.translation.y
+                    );
+                    // Accuracy is determined by the placement of the note when user pressed key
+                    let accuracy = WHITE_KEY_HEIGHT - transform.translation.y;
+
+                    // Since the accuracy goes from 0.0 (super accurate) to 2.0+ (not as much)
+                    // We find the accuracy "percentage" (e.g. 100 * 0.5)
+                    // then we subtract from initial score.
+                    let initial_score = 1000;
+                    let score = initial_score - ((initial_score as f32 * accuracy) as i32).min(0);
+
+                    game_state.score += score;
+
+                    // Check time for debug
                     let current_time = timeline_state.timer.elapsed_secs();
                     println!(
                         "[COLLISION] User time: {} - Note time: {}",
@@ -560,6 +586,31 @@ pub fn game_setup(mut commands: Commands) {
     });
 }
 
+fn score_ui(mut contexts: EguiContexts, game_state: Res<GameState>) {
+    // Set window styles
+    let ctx = contexts.ctx_mut();
+    // let old = ctx.style().visuals.clone();
+    // ctx.set_visuals(egui::Visuals {
+    //     window_fill: Color32::TRANSPARENT,
+    //     panel_fill: Color32::TRANSPARENT,
+    //     window_stroke: egui::Stroke {
+    //         color: Color32::TRANSPARENT,
+    //         width: 0.0,
+    //     },
+    //     window_shadow: epaint::Shadow {
+    //         color: Color32::TRANSPARENT,
+    //         ..old.window_shadow
+    //     },
+    //     ..old
+    // });
+
+    // Create window + UI
+    egui::Window::new("Score").title_bar(false).show(ctx, |ui| {
+        ui.label("Score");
+        ui.heading(game_state.score.to_string());
+    });
+}
+
 pub fn debug_sync_camera(
     mut cameras: Query<(&mut Transform, &ThirdPersonCamera), Without<PianoKey>>,
     debug_state: Res<DebugState>,
@@ -581,6 +632,7 @@ pub fn debug_sync_camera(
 fn debug_game_ui(
     mut contexts: EguiContexts,
     mut timeline_state: ResMut<MusicTimelineState>,
+    mut game_state: ResMut<GameState>,
     timeline: Res<MusicTimeline>,
     time: Res<Time>,
 ) {
@@ -644,6 +696,8 @@ fn debug_game_ui(
             timeline_state.timer.reset();
             timeline_state.timer.pause();
 
+            game_state.score = 0;
+
             // @TODO: Add a reset event or flag so the game can
             // clear any 3D notes before starting new scene
         }
@@ -664,8 +718,4 @@ fn get_octave(current_octave: i32) -> i32 {
     let octave = 3 - current_octave;
     let octave_offset = octave * 12;
     octave_offset
-}
-
-fn lerp(start: &f32, end: &f32, amt: f32) -> f32 {
-    return (1.0 - amt) * start + amt * end;
 }
