@@ -356,7 +356,11 @@ pub fn check_timeline_collisions(
                     // We find the percent of score to remove based on accuracy (e.g. score * 0.5)
                     // then we subtract from initial score.
                     let initial_score = 1000;
-                    let score = initial_score - ((initial_score as f32 * accuracy) as i32);
+
+                    let mistake_cost = (initial_score as f32 * accuracy) as i32;
+                    let mistake_cost = if mistake_cost < 0 { 0 } else { mistake_cost };
+
+                    let score = initial_score - mistake_cost;
                     println!("adding score {}", score);
 
                     // Update game state with the new score
