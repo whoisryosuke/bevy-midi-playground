@@ -9,7 +9,7 @@ use bevy_rapier3d::prelude::*;
 
 use crate::{
     debug::DebugState,
-    enemy::{Enemy, EnemyColliderEvent, EnemyPlugin},
+    enemy::{Enemy, EnemyColliderEvent, EnemyDamage, EnemyPlugin},
     midi::{MidiEvents, MidiInputKey, MidiInputState},
 };
 
@@ -41,6 +41,10 @@ pub struct PianoKey;
 #[derive(Component)]
 pub struct PianoKeyId(usize);
 
+// The index of a key (0 to total number of keys)
+#[derive(Component)]
+pub struct Health(i32);
+
 // The type of key (black, white, etc)
 // The types of inputs on a MIDI keyboard
 #[derive(Component)]
@@ -65,6 +69,7 @@ const WHITE_KEY_DEPTH: f32 = 0.25;
 const BLACK_KEY_WIDTH: f32 = 0.5;
 const BLACK_KEY_HEIGHT: f32 = 3.5;
 const BLACK_KEY_DEPTH: f32 = 0.5;
+const PIANO_KEY_HEALTH_INITIAL: i32 = 100;
 
 // Plugin
 
@@ -82,6 +87,7 @@ impl Plugin for GamePlugin {
             .add_system(animate_music_notes.in_set(OnUpdate(AppState::Game)))
             .add_system(clear_music_notes.in_set(OnUpdate(AppState::Game)))
             .add_system(handle_collision_events.in_set(OnUpdate(AppState::Game)))
+            .add_system(handle_damage_events.in_set(OnUpdate(AppState::Game)))
             // .add_system(check_collisions_manual.in_set(OnUpdate(AppState::Game)))
             .add_system(debug_sync_camera.in_set(OnUpdate(AppState::Game)))
             // Cleanup
@@ -124,6 +130,7 @@ pub fn spawn_piano(
                         PianoKey,
                         PianoKeyId(index),
                         PianoKeyType::White,
+                        Health(PIANO_KEY_HEALTH_INITIAL),
                         // Mesh
                         PbrBundle {
                             mesh: meshes.add(Mesh::from(shape::Box::new(
@@ -489,6 +496,29 @@ fn handle_collision_events(
 
     for contact_force_event in contact_force_events.iter() {
         println!("Received contact force event: {contact_force_event:?}");
+    }
+}
+
+fn handle_damage_events(
+    mut damage_events: EventReader<EnemyDamage>,
+    keys: Query<(&PianoKeyId, &Health)>,
+) {
+    if damage_events.is_empty() {
+        return;
+    }
+
+    for damage_event in damage_events.iter() {
+        let EnemyDamage(collided_key_id) = damage_event;
+
+        for (id_component, health_component) in keys.iter() {
+            let PianoKeyId(check_key_id) = id_component;
+
+            if check_key_id == collided_key_id {
+                println!("[PIANO] Key {} taking 10 points damage", check_key_id);
+                let Health(mut health) = health_component;
+                health -= 10;
+            }
+        }
     }
 }
 

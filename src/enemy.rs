@@ -24,6 +24,10 @@ pub struct Enemy {
 #[derive(Component)]
 pub struct EnemyProjectile;
 
+// Events
+// Communicates a piano key (first parameter) has taken damage
+pub struct EnemyDamage(pub usize);
+
 const ENEMY_SPAWN_TIME: f32 = 3.0;
 const ENEMY_MAX_COUNT: i32 = 2;
 const ENEMY_SIZE: f32 = 0.5;
@@ -54,6 +58,7 @@ pub struct EnemyPlugin;
 impl Plugin for EnemyPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<EnemyColliderEvent>()
+            .add_event::<EnemyDamage>()
             .insert_resource(EnemyState {
                 count: 0,
                 spawn_timer: Timer::from_seconds(ENEMY_SPAWN_TIME, TimerMode::Once),
@@ -296,49 +301,46 @@ fn detect_enemy_collision(
     mut command: Commands,
     projectiles: Query<(Entity, &Transform), With<EnemyProjectile>>,
     keys: Query<(&Transform, &PianoKeyType), With<PianoKey>>,
+    mut damage_events: EventWriter<EnemyDamage>,
 ) {
-    // Quickly check the height of piano keys
-    // Get the first key
-    let key_result = keys
-        .iter()
-        .enumerate()
-        .find(|(index, _)| *index == (0 as usize));
-    if let Some((_, (single_key_check, _))) = key_result {
-        println!("[PROJECTILE] Found a piano key to compare");
-        let key_height = single_key_check.translation.y;
+    // Loop through all the projectiles and check collisions
+    for (projectile_entity, projectile_position) in projectiles.iter() {
+        // println!(
+        //     "[PROJECTILE] Projectile vs note Y {}",
+        //     projectile_position.translation.y
+        // );
+        // Tried to grab this by querying the keys - but kept getting 0?
+        let piano_key_height = 25.0;
+        if projectile_position.translation.y > 25.0 {
+            println!("[PROJECTILE] Collided with player's piano");
 
-        // Loop through all the projectiles and check collisions
-        for (projectile_entity, projectile_position) in projectiles.iter() {
-            if projectile_position.translation.y > key_height {
-                println!("[PROJECTILE] Collided with player's piano");
+            // Figure out which white key got hit
+            let mut white_key_index = 0;
+            for (key_position, key_type) in keys.iter() {
+                match key_type {
+                    // White key? Check if the projectile is in piano key "lane"
+                    PianoKeyType::White => {
+                        let key_size = key_position.translation.x + WHITE_KEY_WIDTH;
+                        if projectile_position.translation.x > key_position.translation.x
+                            && projectile_position.translation.x < key_size
+                        {
+                            // Found the key!
+                            println!("[PROJECTILE] Damage to key {}", &white_key_index);
 
-                // Figure out which white key got hit
-                let mut white_key_index = 0;
-                for (key_position, key_type) in keys.iter() {
-                    match key_type {
-                        // White key? Check if the projectile is in piano key "lane"
-                        PianoKeyType::White => {
-                            let key_size = key_position.translation.x + WHITE_KEY_WIDTH;
-                            if projectile_position.translation.x > key_position.translation.x
-                                && projectile_position.translation.x < key_size
-                            {
-                                // Found the key!
-                                println!("[PROJECTILE] Damage to key {}", &white_key_index);
+                            // Send "damage" event to piano key
+                            // damage_events.send(EnemyDamage(white_key_index));
 
-                                // Send "damage" event to piano key
+                            // Despawn / destruct projectile
+                            // command.entity(projectile_entity).despawn();
 
-                                // Despawn / destruct projectile
-                                command.entity(projectile_entity).despawn();
-
-                                return;
-                            }
-
-                            white_key_index += 1;
-                        }
-                        // Ignore black keys
-                        PianoKeyType::Black => {
                             return;
                         }
+
+                        white_key_index += 1;
+                    }
+                    // Ignore black keys
+                    PianoKeyType::Black => {
+                        return;
                     }
                 }
             }
