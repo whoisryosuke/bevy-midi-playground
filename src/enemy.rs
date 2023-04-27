@@ -72,7 +72,7 @@ impl Plugin for EnemyPlugin {
             .add_system(enemy_animation.in_set(OnUpdate(AppState::Game)))
             .add_system(enemy_shooting.in_set(OnUpdate(AppState::Game)))
             .add_system(enemy_projectile_animation.in_set(OnUpdate(AppState::Game)))
-            .add_system(detect_enemy_collision.in_set(OnUpdate(AppState::Game)))
+            // .add_system(detect_enemy_collision.in_set(OnUpdate(AppState::Game)))
             // Cleanup
             .add_system(enemy_cleanup.in_schedule(OnExit(AppState::Game)));
     }
@@ -262,6 +262,12 @@ fn enemy_shooting(
                     // Spawn projectile
                     commands.spawn((
                         EnemyProjectile,
+                        RigidBody::Dynamic,
+                        Collider::cuboid(ENEMY_SHOT_SIZE, ENEMY_SHOT_SIZE, ENEMY_SHOT_SIZE),
+                        Velocity::default(),
+                        GravityScale(0.0),
+                        // Needed to detect collision events
+                        ActiveEvents::COLLISION_EVENTS,
                         PbrBundle {
                             mesh: meshes.add(
                                 shape::Box::new(ENEMY_SHOT_SIZE, ENEMY_SHOT_SIZE, ENEMY_SHOT_SIZE)
@@ -291,9 +297,10 @@ fn enemy_shooting(
     }
 }
 
-fn enemy_projectile_animation(mut projectiles: Query<&mut Transform, With<EnemyProjectile>>) {
+fn enemy_projectile_animation(mut projectiles: Query<&mut Velocity, With<EnemyProjectile>>) {
     for mut projectile in projectiles.iter_mut() {
-        projectile.translation.y += 0.1;
+        // projectile.translation.y += 0.1;
+        projectile.linvel.y += 0.1;
     }
 }
 

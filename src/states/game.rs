@@ -131,6 +131,9 @@ pub fn spawn_piano(
                         PianoKeyId(index),
                         PianoKeyType::White,
                         Health(PIANO_KEY_HEALTH_INITIAL),
+                        Collider::cuboid(WHITE_KEY_WIDTH, 0.5, WHITE_KEY_DEPTH),
+                        // Needed to detect collision events
+                        // ActiveEvents::COLLISION_EVENTS,
                         // Mesh
                         PbrBundle {
                             mesh: meshes.add(Mesh::from(shape::Box::new(
