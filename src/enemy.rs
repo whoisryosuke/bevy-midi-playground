@@ -26,7 +26,7 @@ pub struct EnemyProjectile;
 
 // Events
 // Communicates a piano key (first parameter) has taken damage
-pub struct EnemyDamage(pub usize);
+pub struct EnemyDamage(pub Entity);
 
 const ENEMY_SPAWN_TIME: f32 = 3.0;
 const ENEMY_MAX_COUNT: i32 = 2;
@@ -64,7 +64,7 @@ impl Plugin for EnemyPlugin {
                 spawn_timer: Timer::from_seconds(ENEMY_SPAWN_TIME, TimerMode::Once),
             })
             // Startup
-            // .add_system(spawn_enemies.in_schedule(OnEnter(AppState::Game)))
+            .add_system(spawn_colliders.in_schedule(OnEnter(AppState::Game)))
             // Game loop
             .add_system(enemy_spawn_manager.in_set(OnUpdate(AppState::Game)))
             .add_system(mark_enemy_for_destruction.in_set(OnUpdate(AppState::Game)))
@@ -72,10 +72,26 @@ impl Plugin for EnemyPlugin {
             .add_system(enemy_animation.in_set(OnUpdate(AppState::Game)))
             .add_system(enemy_shooting.in_set(OnUpdate(AppState::Game)))
             .add_system(enemy_projectile_animation.in_set(OnUpdate(AppState::Game)))
+            .add_system(handle_collision_events.in_set(OnUpdate(AppState::Game)))
             // .add_system(detect_enemy_collision.in_set(OnUpdate(AppState::Game)))
             // Cleanup
             .add_system(enemy_cleanup.in_schedule(OnExit(AppState::Game)));
     }
+}
+
+fn spawn_colliders(mut commands: Commands) {
+    commands.spawn((
+        RigidBody::Fixed,
+        Collider::cuboid(25.0, 25.0, 1.0),
+        SpatialBundle::from_transform(Transform::from_xyz(0.0, 0.0, -3.0)),
+        ColliderDebugColor(Color::hsl(220.3, 220.0, 220.3)),
+    ));
+    commands.spawn((
+        RigidBody::Fixed,
+        Collider::cuboid(25.0, 25.0, 1.0),
+        SpatialBundle::from_transform(Transform::from_xyz(0.0, 0.0, 3.0)),
+        ColliderDebugColor(Color::hsl(220.3, 220.0, 220.3)),
+    ));
 }
 
 pub fn mark_enemy_for_destruction(
@@ -352,6 +368,64 @@ fn detect_enemy_collision(
                 }
             }
         }
+    }
+}
+
+fn handle_collision_events(
+    mut commands: Commands,
+    mut collision_events: EventReader<CollisionEvent>,
+    mut contact_force_events: EventReader<ContactForceEvent>,
+    mut damage_event: EventWriter<EnemyDamage>,
+    keys: Query<Entity, With<PianoKey>>,
+    projectiles: Query<Entity, With<EnemyProjectile>>,
+) {
+    // Check for collisions
+    for collision_event in collision_events.iter() {
+        match collision_event {
+            CollisionEvent::Started(first_entity, second_entity, _) => {
+                println!(
+                    "[COLLISION] Projectile check - {} collided with {}",
+                    first_entity.index(),
+                    second_entity.index()
+                );
+
+                // Figure out if 2 colliding objects are enemy and a note
+                // Piano key check
+                let mut piano_key_entity = first_entity;
+                let is_first_piano_key = keys.contains(*first_entity);
+                let is_second_piano_key = keys.contains(*second_entity);
+                if is_second_piano_key {
+                    piano_key_entity = second_entity;
+                }
+                let is_piano_key = is_first_piano_key || is_second_piano_key;
+
+                // Projectile check
+                let mut projectile_entity = first_entity;
+                let is_first_projectile = projectiles.contains(*first_entity);
+                let is_second_projectile = projectiles.contains(*second_entity);
+                if is_second_projectile {
+                    projectile_entity = second_entity;
+                }
+                let is_projectile = is_first_projectile || is_second_projectile;
+
+                // Did a projectile collide with an piano_key?
+                if is_piano_key && is_projectile {
+                    println!("[COLLISION] Piano key hit by projectile");
+
+                    // Trigger piano_key destruction
+                    damage_event.send(EnemyDamage(*piano_key_entity));
+
+                    // Despawn the projectile cause it'll just sit there
+                    // @TODO: Animate it too why not
+                    commands.entity(*projectile_entity).despawn();
+                }
+            }
+            CollisionEvent::Stopped(first_entity, second_entity, event) => {}
+        }
+    }
+
+    for contact_force_event in contact_force_events.iter() {
+        println!("Received contact force event: {contact_force_event:?}");
     }
 }
 

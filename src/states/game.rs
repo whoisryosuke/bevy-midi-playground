@@ -504,19 +504,19 @@ fn handle_collision_events(
 
 fn handle_damage_events(
     mut damage_events: EventReader<EnemyDamage>,
-    keys: Query<(&PianoKeyId, &Health)>,
+    keys: Query<(Entity, &Health)>,
 ) {
     if damage_events.is_empty() {
         return;
     }
 
     for damage_event in damage_events.iter() {
-        let EnemyDamage(collided_key_id) = damage_event;
+        let EnemyDamage(collided_entity) = damage_event;
 
-        for (id_component, health_component) in keys.iter() {
-            let PianoKeyId(check_key_id) = id_component;
+        for (key_entity, health_component) in keys.iter() {
+            let check_key_id = key_entity.index();
 
-            if check_key_id == collided_key_id {
+            if check_key_id == collided_entity.index() {
                 println!("[PIANO] Key {} taking 10 points damage", check_key_id);
                 let Health(mut health) = health_component;
                 health -= 10;
